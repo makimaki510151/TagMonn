@@ -162,12 +162,13 @@ h3 { margin-top: 0; margin-bottom: 15px; font-size: 1.1rem; border-left: 4px sol
     margin-top: 10px;
 }
 .res-item {
-    font-size: 0.7rem;
-    padding: 4px 6px;
-    border-radius: 4px;
+    font-size: 0.75rem;
+    padding: 6px 8px;
+    border-radius: 6px;
     text-align: center;
     background: #f1f5f9;
     border: 1px solid #e2e8f0;
+    font-weight: 600;
 }
 .res-weak { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
 .res-resist { background: #dcfce7; color: #15803d; border-color: #bbf7d0; }
