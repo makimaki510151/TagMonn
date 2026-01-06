@@ -13,7 +13,7 @@ let battleState = {
     p1NextAction: null, p2NextAction: null,
     isProcessing: false,
     isSelectingInitial: false,
-    isForcedSwitch: null, // 1 or 2 (死に出し時のみ使用)
+    isForcedSwitch: null, // 1 or 2
     isStoryMode: false,
     currentStage: null
 };
@@ -252,14 +252,20 @@ function updateBuildPreview() {
     saveBtn.textContent = currentBuild.id ? "キャラクターを更新" : "キャラクターを保存";
 }
 
+// ステータス計算式を元に戻す
 function calculateStats(tags) {
-    let hp = 100, atk = 100, spd = 100;
+    let baseHp = 150, baseAtk = 80, baseSpd = 80;
+    let modHp = 0, modAtk = 0, modSpd = 0;
     tags.forEach(t => {
-        hp += (t.hp || 0) * 10;
-        atk += (t.atk || 0) * 5;
-        spd += (t.spd || 0) * 5;
+        modHp += (t.hp || 0) * 0.5;
+        modAtk += (t.atk || 0) * 0.3;
+        modSpd += (t.spd || 0) * 0.3;
     });
-    return { hp, atk, spd };
+    return {
+        hp: Math.floor(baseHp + modHp),
+        atk: Math.floor(baseAtk + modAtk),
+        spd: Math.floor(baseSpd + modSpd)
+    };
 }
 
 function calculateResistances(tags) {
@@ -729,10 +735,16 @@ function renderActionPanel(pNum, char, containerId) {
     cont.innerHTML = `<h4>P${pNum}の選択</h4><div class="action-grid"></div>`;
     const grid = cont.querySelector('.action-grid');
     
+    // 選択中のアクションを取得してハイライト
+    const currentAction = pNum === 1 ? battleState.p1NextAction : battleState.p2NextAction;
+
     // 技ボタン
     char.moves.forEach(m => {
         const btn = document.createElement('button');
         btn.className = 'action-btn';
+        if (currentAction?.type === 'move' && currentAction.move.id === m.id) {
+            btn.classList.add('active');
+        }
         btn.textContent = m.name;
         btn.onclick = () => handleAction(pNum, { type: 'move', move: m });
         grid.appendChild(btn);
@@ -744,6 +756,9 @@ function renderActionPanel(pNum, char, containerId) {
         if (idx !== (pNum === 1 ? battleState.p1ActiveIdx : battleState.p2ActiveIdx) && !c.isFainted) {
             const btn = document.createElement('button');
             btn.className = 'action-btn switch';
+            if (currentAction?.type === 'switch' && currentAction.index === idx) {
+                btn.classList.add('active');
+            }
             btn.style.textAlign = 'left';
             btn.style.height = 'auto';
             btn.style.padding = '8px';
