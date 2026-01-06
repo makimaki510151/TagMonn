@@ -56,7 +56,6 @@ io.on('connection', (socket) => {
 
             io.to(targetId).emit('match_established', { roomId, role: 1, opponentName: players[socket.id].name });
             io.to(socket.id).emit('match_established', { roomId, role: 2, opponentName: players[targetId].name });
-
             io.emit('update_player_list', Object.values(players));
         } else {
             io.to(targetId).emit('challenge_declined', { fromName: players[socket.id].name });
@@ -104,28 +103,17 @@ io.on('connection', (socket) => {
 
         if (role === 1) {
             room.p1ActiveIdx = index;
-            room.p1Action = { type: 'initial', index };
+            room.p1Action = { type: 'initial' };
         } else {
             room.p2ActiveIdx = index;
-            room.p2Action = { type: 'initial', index };
+            room.p2Action = { type: 'initial' };
         }
 
         if (room.p1Action && room.p2Action) {
             const p1Char = room.p1Party[room.p1ActiveIdx];
             const p2Char = room.p2Party[room.p2ActiveIdx];
-
-            io.to(room.p1).emit('initial_pick_reveal', {
-                myIndex: room.p1ActiveIdx,
-                oppIndex: room.p2ActiveIdx,
-                oppActiveChar: { name: p2Char.name, baseStats: p2Char.baseStats, resistances: p2Char.resistances, currentHp: p2Char.currentHp },
-                oppPartySize: room.p2Party.length
-            });
-            io.to(room.p2).emit('initial_pick_reveal', {
-                myIndex: room.p2ActiveIdx,
-                oppIndex: room.p1ActiveIdx,
-                oppActiveChar: { name: p1Char.name, baseStats: p1Char.baseStats, resistances: p1Char.resistances, currentHp: p1Char.currentHp },
-                oppPartySize: room.p1Party.length
-            });
+            io.to(room.p1).emit('initial_pick_reveal', { myIndex: room.p1ActiveIdx, oppIndex: room.p2ActiveIdx, oppActiveChar: p2Char, oppPartySize: room.p2Party.length });
+            io.to(room.p2).emit('initial_pick_reveal', { myIndex: room.p2ActiveIdx, oppIndex: room.p1ActiveIdx, oppActiveChar: p1Char, oppPartySize: room.p1Party.length });
             room.p1Action = null;
             room.p2Action = null;
         }
@@ -138,79 +126,67 @@ io.on('connection', (socket) => {
         if (role === 1) room.p1Action = action;
         else room.p2Action = action;
 
+        // どちらかが倒れている状態での「死に出し」の同期
+        const p1Fainted = room.p1Party[room.p1ActiveIdx].isFainted;
+        const p2Fainted = room.p2Party[room.p2ActiveIdx].isFainted;
+
+        // 通常ターン（両者生存）または死に出し（交代先が決定したか）の判定
         if (room.p1Action && room.p2Action) {
             const outcomes = [];
-            let acts = [
-                { p: 1, act: room.p1Action, char: room.p1Party[room.p1ActiveIdx] },
-                { p: 2, act: room.p2Action, char: room.p2Party[room.p2ActiveIdx] }
-            ];
+            
+            // 死に出し（交代のみ）の場合の処理
+            if (p1Fainted || p2Fainted) {
+                if (room.p1Action.type === 'switch') room.p1ActiveIdx = room.p1Action.index;
+                if (room.p2Action.type === 'switch') room.p2ActiveIdx = room.p2Action.index;
 
-            acts.sort((a, b) => {
-                const priA = (a.act.type === 'switch' ? 1000 : (a.act.move?.priority || 0) * 100) + a.char.battleSpd;
-                const priB = (b.act.type === 'switch' ? 1000 : (b.act.move?.priority || 0) * 100) + b.char.battleSpd;
-                return priB - priA;
-            });
+                const c1 = room.p1Party[room.p1ActiveIdx];
+                const c2 = room.p2Party[room.p2ActiveIdx];
 
-            for (let a of acts) {
-                if (a.char.isFainted) continue;
+                outcomes.push({ type: 'switch_sync', 
+                    p1Idx: room.p1ActiveIdx, p1Char: c1,
+                    p2Idx: room.p2ActiveIdx, p2Char: c2 
+                });
+            } else {
+                // 通常ターンのダメージ計算
+                let acts = [
+                    { p: 1, act: room.p1Action, char: room.p1Party[room.p1ActiveIdx] },
+                    { p: 2, act: room.p2Action, char: room.p2Party[room.p2ActiveIdx] }
+                ];
+                acts.sort((a, b) => {
+                    const priA = (a.act.type === 'switch' ? 1000 : (a.act.move?.priority || 0) * 100) + a.char.battleSpd;
+                    const priB = (b.act.type === 'switch' ? 1000 : (b.act.move?.priority || 0) * 100) + b.char.battleSpd;
+                    return priB - priA;
+                });
 
-                if (a.act.type === 'switch') {
-                    if (a.p === 1) room.p1ActiveIdx = a.act.index;
-                    else room.p2ActiveIdx = a.act.index;
+                for (let a of acts) {
+                    if (a.char.isFainted) continue;
+                    if (a.act.type === 'switch') {
+                        if (a.p === 1) room.p1ActiveIdx = a.act.index;
+                        else room.p2ActiveIdx = a.act.index;
+                        const nC = (a.p === 1 ? room.p1Party : room.p2Party)[a.act.index];
+                        outcomes.push({ type: 'switch', p: a.p, index: a.act.index, charDetails: nC });
+                    } else {
+                        const targetSide = a.p === 1 ? 2 : 1;
+                        const target = (targetSide === 1 ? room.p1Party : room.p2Party)[targetSide === 1 ? room.p1ActiveIdx : room.p2ActiveIdx];
+                        const move = a.act.move;
+                        const resMult = target.resistances[move.res_type] || 1.0;
+                        const damage = Math.floor(move.power * (a.char.battleAtk / 80) * resMult);
 
-                    const newChar = (a.p === 1 ? room.p1Party : room.p2Party)[a.act.index];
-                    outcomes.push({
-                        type: 'switch',
-                        p: a.p,
-                        index: a.act.index,
-                        charDetails: {
-                            name: newChar.name,
-                            baseStats: newChar.baseStats,
-                            resistances: newChar.resistances,
-                            currentHp: newChar.currentHp
+                        target.currentHp = Math.max(0, target.currentHp - damage);
+                        if (target.currentHp <= 0) target.isFainted = true;
+
+                        const outcome = { type: 'move', p: a.p, moveName: move.name, damage, resMult, targetP: targetSide, targetHp: target.currentHp, targetFainted: target.isFainted, effects: [] };
+                        if (move.effect && Math.random() < (move.effect.chance || 1.0)) {
+                            const eff = move.effect;
+                            if (eff.type === 'buff') { a.char[`battle${eff.stat.charAt(0).toUpperCase() + eff.stat.slice(1)}`] *= eff.value; outcome.effects.push({ type: 'buff', stat: eff.stat, userP: a.p }); }
+                            else if (eff.type === 'debuff') { target[`battle${eff.stat.charAt(0).toUpperCase() + eff.stat.slice(1)}`] *= eff.value; outcome.effects.push({ type: 'debuff', stat: eff.stat, targetP: targetSide }); }
+                            else if (eff.type === 'heal') { a.char.currentHp = Math.min(a.char.maxHp, a.char.currentHp + Math.floor(a.char.maxHp * eff.value)); outcome.effects.push({ type: 'heal', userP: a.p, userHp: a.char.currentHp }); }
                         }
-                    });
-                } else {
-                    const attacker = a.char;
-                    const targetSide = a.p === 1 ? 2 : 1;
-                    const targetParty = targetSide === 1 ? room.p1Party : room.p2Party;
-                    const targetIdx = targetSide === 1 ? room.p1ActiveIdx : room.p2ActiveIdx;
-                    const target = targetParty[targetIdx];
-
-                    const move = a.act.move;
-                    const resMult = target.resistances[move.res_type] || 1.0;
-                    const damage = Math.floor(move.power * (attacker.battleAtk / 80) * resMult);
-
-                    target.currentHp = Math.max(0, target.currentHp - damage);
-                    if (target.currentHp <= 0) target.isFainted = true;
-
-                    const outcome = { type: 'move', p: a.p, moveName: move.name, damage, resMult, targetP: targetSide, targetHp: target.currentHp, targetFainted: target.isFainted, effects: [] };
-
-                    if (move.effect) {
-                        const eff = move.effect;
-                        if (Math.random() < (eff.chance || 1.0)) {
-                            if (eff.type === 'buff') {
-                                attacker[`battle${eff.stat.charAt(0).toUpperCase() + eff.stat.slice(1)}`] *= eff.value;
-                                outcome.effects.push({ type: 'buff', stat: eff.stat, userP: a.p });
-                            } else if (eff.type === 'debuff') {
-                                target[`battle${eff.stat.charAt(0).toUpperCase() + eff.stat.slice(1)}`] *= eff.value;
-                                outcome.effects.push({ type: 'debuff', stat: eff.stat, targetP: targetSide });
-                            } else if (eff.type === 'heal') {
-                                const healAmt = Math.floor(attacker.maxHp * eff.value);
-                                attacker.currentHp = Math.min(attacker.maxHp, attacker.currentHp + healAmt);
-                                outcome.effects.push({ type: 'heal', userP: a.p, userHp: attacker.currentHp });
-                            } else if (eff.type === 'drain') {
-                                const drainAmt = Math.floor(damage * eff.value);
-                                attacker.currentHp = Math.min(attacker.maxHp, attacker.currentHp + drainAmt);
-                                outcome.effects.push({ type: 'drain', userP: a.p, userHp: attacker.currentHp });
-                            }
-                        }
+                        outcomes.push(outcome);
+                        if (target.isFainted) break;
                     }
-                    outcomes.push(outcome);
-                    if (target.isFainted) break;
                 }
             }
-
             io.to(roomId).emit('resolve_turn', { outcomes });
             room.p1Action = null;
             room.p2Action = null;
@@ -218,22 +194,15 @@ io.on('connection', (socket) => {
     });
 
     socket.on('leave_battle', () => resetPlayer(socket));
-    socket.on('disconnect', () => {
-        resetPlayer(socket);
-        console.log('User disconnected:', socket.id);
-    });
+    socket.on('disconnect', () => { resetPlayer(socket); });
 
     function resetPlayer(s) {
         if (players[s.id]) {
             const roomId = players[s.id].roomId;
             if (roomId && rooms[roomId]) {
-                const room = rooms[roomId];
-                const opponentId = room.p1 === s.id ? room.p2 : room.p1;
+                const opponentId = rooms[roomId].p1 === s.id ? rooms[roomId].p2 : rooms[roomId].p1;
                 io.to(opponentId).emit('opponent_left');
-                if (players[opponentId]) {
-                    players[opponentId].status = 'idle';
-                    players[opponentId].roomId = null;
-                }
+                if (players[opponentId]) { players[opponentId].status = 'idle'; players[opponentId].roomId = null; }
                 delete rooms[roomId];
             }
             delete players[s.id];
