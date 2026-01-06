@@ -553,9 +553,13 @@ function updateBattleUI() {
         renderSelectionPanel();
     } else if (battleState.isForcedSwitch) {
         renderSelectionPanel();
-    } else {
+    } else if (!battleState.isProcessing) {
         renderActionPanel(1, a1, 'move-actions');
         renderActionPanel(2, a2, 'switch-actions');
+    } else {
+        // 処理中はアクションパネルをクリア
+        document.getElementById('move-actions').innerHTML = "";
+        document.getElementById('switch-actions').innerHTML = "";
     }
 }
 
@@ -807,8 +811,10 @@ function handleAction(pNum, action) {
         if (pNum === 1) battleState.p1NextAction = action;
         else battleState.p2NextAction = action;
 
+        // 既にアクション選択済みならオーバーレイを表示
         document.getElementById('waiting-overlay').classList.remove('hidden');
-        renderActionPanel(pNum, (pNum === 1 ? battleState.p1[battleState.p1ActiveIdx] : battleState.p2[battleState.p2ActiveIdx]), pNum === 1 ? 'move-actions' : 'switch-actions');
+        // パネルを更新して選択不能にする
+        updateBattleUI();
     } else {
         // ローカル
         if (pNum === 1) battleState.p1NextAction = action;
@@ -866,33 +872,33 @@ async function processTurn() {
             setTimeout(() => targetEl.classList.remove('shake', 'flash'), 500);
 
             const move = a.act.move;
-            const resMult = target.resistances[move.res_type] || 1.0;
-            let damage = Math.floor(move.power * (attacker.battleAtk / 80) * resMult);
+            const battleResult = BattleLogic.calculateDamage(move, attacker, target);
+            
+            if (!battleResult.isHit) {
+                log("攻撃は外れた！");
+            } else {
+                const damage = battleResult.damage;
+                const resMult = battleResult.resMult;
 
-            if (damage > 0) {
-                if (resMult > 1.0) log("効果は抜群だ！");
-                if (resMult < 1.0) log("効果はいまひとつのようだ...");
-            }
+                if (damage > 0) {
+                    if (resMult > 1.0) log("効果は抜群だ！");
+                    if (resMult < 1.0) log("効果はいまひとつのようだ...");
+                }
 
-            target.currentHp = Math.max(0, target.currentHp - damage);
+                target.currentHp = Math.max(0, target.currentHp - damage);
 
-            if (move.effect) {
-                const eff = move.effect;
-                if (Math.random() < (eff.chance || 1.0)) {
-                    if (eff.type === 'buff') {
-                        attacker[`battle${eff.stat.charAt(0).toUpperCase() + eff.stat.slice(1)}`] *= eff.value;
-                        log(`${attacker.name}の${eff.stat}が上がった！`);
-                    } else if (eff.type === 'debuff') {
-                        target[`battle${eff.stat.charAt(0).toUpperCase() + eff.stat.slice(1)}`] *= eff.value;
-                        log(`${target.name}の${eff.stat}が下がった！`);
-                    } else if (eff.type === 'heal') {
-                        const healAmt = Math.floor(attacker.maxHp * eff.value);
-                        attacker.currentHp = Math.min(attacker.maxHp, attacker.currentHp + healAmt);
-                        log(`${attacker.name}は体力を回復した！`);
-                    } else if (eff.type === 'drain') {
-                        const drainAmt = Math.floor(damage * eff.value);
-                        attacker.currentHp = Math.min(attacker.maxHp, attacker.currentHp + drainAmt);
-                        log(`${attacker.name}は体力を吸収した！`);
+                if (move.effect) {
+                    const effectResult = BattleLogic.applyEffect(move.effect, attacker, target, damage);
+                    if (effectResult) {
+                        if (effectResult.type === 'buff') {
+                            log(`${attacker.name}の${effectResult.stat}が上がった！`);
+                        } else if (effectResult.type === 'debuff') {
+                            log(`${target.name}の${effectResult.stat}が下がった！`);
+                        } else if (effectResult.type === 'heal') {
+                            log(`${attacker.name}は体力を回復した！`);
+                        } else if (effectResult.type === 'drain') {
+                            log(`${attacker.name}は体力を吸収した！`);
+                        }
                     }
                 }
             }
@@ -1288,13 +1294,33 @@ function connectOnline() {
             }
 
             battleState.isProcessing = false;
-            checkForcedSwitch();
+            
+            // ターン終了時に死に出しが必要かチェック
+            if (onlineState.isOnlineBattle) {
+                const mySide = onlineState.role === 1 ? battleState.p1 : battleState.p2;
+                const myActive = mySide[onlineState.role === 1 ? battleState.p1ActiveIdx : battleState.p2ActiveIdx];
+                
+                const oppSide = onlineState.role === 1 ? battleState.p2 : battleState.p1;
+                const oppActive = oppSide[onlineState.role === 1 ? battleState.p2ActiveIdx : battleState.p1ActiveIdx];
+
+                if (myActive.isFainted && mySide.some(c => !c.isFainted)) {
+                    battleState.isForcedSwitch = onlineState.role;
+                } else if (oppActive.isFainted && oppSide.some(c => !c.isFainted)) {
+                    // 相手だけが倒れた場合は、相手の交代を待つためにオーバーレイを表示
+                    document.getElementById('waiting-overlay').classList.remove('hidden');
+                }
+            }
+            
+            updateBattleUI();
         });
 
         socket.on('forced_switch_reveal', ({ role, index, activeChar }) => {
             // 待機画面を消す
             const overlay = document.getElementById('waiting-overlay');
             if (overlay) overlay.classList.add('hidden');
+            
+            // 処理中フラグをリセット（念のため）
+            battleState.isProcessing = false;
 
             if (onlineState.role === role) {
                 // 自分の交代の場合

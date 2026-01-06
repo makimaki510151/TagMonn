@@ -1,6 +1,7 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const BattleLogic = require('./battleLogic');
 
 const app = express();
 const server = http.createServer(app);
@@ -108,6 +109,14 @@ io.on('connection', (socket) => {
             room.p2ActiveIdx = index;
             room.p2Action = { type: 'initial' };
         }
+        
+        // 既にバトル中の死に出し（forced switch）の場合
+        const roomState = rooms[roomId];
+        if (roomState.p1Party && roomState.p2Party && roomState.p1ActiveIdx !== -1 && roomState.p2ActiveIdx !== -1) {
+            // 片方が倒れていて、もう片方が選択した場合
+            const p1Fainted = roomState.p1Party.every(c => c.isFainted || roomState.p1Party.indexOf(c) !== roomState.p1ActiveIdx); // 簡易判定
+            // 実際には、クライアントからのsubmit_actionでtype: 'switch'が送られてくるはずなので、そちらで処理する
+        }
 
         if (room.p1Action && room.p2Action) {
             const p1Char = room.p1Party[room.p1ActiveIdx];
@@ -152,61 +161,91 @@ io.on('connection', (socket) => {
                 // server.js ターン解決部分
                 if (a.act.type === 'move') {
                     const move = a.act.move;
+                    const battleResult = BattleLogic.calculateDamage(move, attacker, target);
 
-                    // 回復処理
-                    if (move.effect && move.effect.type === 'heal') {
-                        const healAmt = Math.floor(attacker.maxHp * move.effect.value);
-                        attacker.currentHp = Math.min(attacker.maxHp, attacker.currentHp + healAmt);
+                    if (!battleResult.isHit) {
                         outcomes.push({
-                            type: 'heal', p: attackerSide, moveName: move.name, healAmt, currentHp: attacker.currentHp
+                            type: 'miss', p: attackerSide, moveName: move.name
                         });
-                    }
+                    } else {
+                        const damage = battleResult.damage;
+                        const resMult = battleResult.resMult;
 
-                    // バフ・デバフ処理 (耐性変化)
-                    if (move.effect && (move.effect.type === 'buff' || move.effect.type === 'debuff')) {
-                        // 原則：buffなら自分(attacker)、debuffなら相手(target)
-                        const isBuff = move.effect.type === 'buff';
-                        const targetChar = isBuff ? attacker : target;
-                        const targetRole = isBuff ? attackerSide : targetSide;
+                        // 効果の適用
+                        if (move.effect) {
+                            const effectResult = BattleLogic.applyEffect(move.effect, attacker, target, damage);
+                            if (effectResult) {
+                                if (effectResult.type === 'heal') {
+                                    outcomes.push({
+                                        type: 'heal', p: attackerSide, moveName: move.name, healAmt: effectResult.amount, currentHp: attacker.currentHp
+                                    });
+                                } else if (effectResult.type === 'drain') {
+                                    outcomes.push({
+                                        type: 'drain', p: attackerSide, moveName: move.name, drainAmt: effectResult.amount, currentHp: attacker.currentHp
+                                    });
+                                } else if (effectResult.type === 'buff' || effectResult.type === 'debuff') {
+                                    const isBuff = effectResult.type === 'buff';
+                                    const targetRole = isBuff ? attackerSide : targetSide;
+                                    const targetChar = isBuff ? attacker : target;
+                                    
+                                    // 耐性変化の場合
+                                    if (effectResult.stat === 'def') {
+                                        outcomes.push({
+                                            type: 'stat_change',
+                                            p: attackerSide,
+                                            moveName: move.name,
+                                            targetP: targetRole,
+                                            stat: 'resistance',
+                                            resType: move.res_type,
+                                            newValue: targetChar.resistances[move.res_type],
+                                            isBuff: isBuff
+                                        });
+                                    } else {
+                                        // その他のステータス変化
+                                        outcomes.push({
+                                            type: 'stat_change',
+                                            p: attackerSide,
+                                            moveName: move.name,
+                                            targetP: targetRole,
+                                            stat: effectResult.stat,
+                                            newValue: targetChar[`battle${effectResult.stat.charAt(0).toUpperCase() + effectResult.stat.slice(1)}`],
+                                            isBuff: isBuff
+                                        });
+                                    }
+                                }
+                            }
+                        }
 
-                        if (move.effect.stat === 'def') {
-                            const resType = move.res_type;
-                            if (!targetChar.resistances[resType]) targetChar.resistances[resType] = 1.0;
-
-                            // 耐性値を更新
-                            targetChar.resistances[resType] *= move.effect.value;
+                        // ダメージの適用
+                        if (damage > 0 || move.power > 0) {
+                            target.currentHp = Math.max(0, target.currentHp - damage);
+                            if (target.currentHp <= 0) target.isFainted = true;
 
                             outcomes.push({
-                                type: 'stat_change',
-                                p: attackerSide,
-                                moveName: move.name,
-                                targetP: targetRole,
-                                stat: 'resistance',
-                                resType: resType,
-                                newValue: targetChar.resistances[resType],
-                                isBuff: isBuff
+                                type: 'move', p: attackerSide, moveName: move.name, damage,
+                                resMult: resMult,
+                                targetP: targetSide, targetHp: target.currentHp, targetFainted: target.isFainted
                             });
                         }
                     }
-
-                    // ダメージ計算 (修正された耐性を参照)
-                    if (move.power > 0) {
-                        const resMult = target.resistances[move.res_type] || 1.0;
-                        const damage = Math.floor((move.power * (attacker.battleAtk / 100)) * (1 / resMult));
-
-                        target.currentHp = Math.max(0, target.currentHp - damage);
-                        if (target.currentHp <= 0) target.isFainted = true;
-
-                        outcomes.push({
-                            type: 'move', p: attackerSide, moveName: move.name, damage,
-                            targetP: targetSide, targetHp: target.currentHp, targetFainted: target.isFainted
-                        });
-                    }
                 } else if (a.act.type === 'switch') {
-                    // ... (既存の交代処理) ...
                     if (a.p === 1) room.p1ActiveIdx = a.act.index;
                     else room.p2ActiveIdx = a.act.index;
-                    outcomes.push({ type: 'switch', p: a.p, index: a.act.index, char: (a.p === 1 ? room.p1Party[a.act.index] : room.p2Party[a.act.index]) });
+                    
+                    const activeChar = a.p === 1 ? room.p1Party[room.p1ActiveIdx] : room.p2Party[room.p2ActiveIdx];
+                    
+                    // 通常の交代か、死に出しかを判定
+                    // 既にoutcomesにダメージ等がある場合は死に出しの可能性があるが、
+                    // ここでは単純に交代イベントとして送る
+                    outcomes.push({ 
+                        type: 'switch', 
+                        p: a.p, 
+                        index: a.act.index, 
+                        char: activeChar 
+                    });
+                    
+                    // 死に出し（forced switch）の場合は、個別にrevealイベントを送る必要がある場合がある
+                    // クライアント側でresolve_turnの後に判定しているため、ここではoutcomesに含めるだけで基本OK
                 }
             }
             io.to(roomId).emit('resolve_turn', { outcomes });
