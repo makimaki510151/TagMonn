@@ -155,64 +155,80 @@ io.on('connection', (socket) => {
         // 双方が必要な入力を終えたかチェック
         if (room.p1Action && room.p2Action) {
             const outcomes = [];
+            const actions = [
+                { p: 1, act: room.p1Action, char: room.p1Party[room.p1ActiveIdx] },
+                { p: 2, act: room.p2Action, char: room.p2Party[room.p2ActiveIdx] }
+            ];
 
-            if (p1NeedsSwitch || p2NeedsSwitch) {
-                // 死に出し解決フェーズ
-                if (p1NeedsSwitch && room.p1Action.type === 'switch') {
-                    room.p1ActiveIdx = room.p1Action.index;
-                }
-                if (p2NeedsSwitch && room.p2Action.type === 'switch') {
-                    room.p2ActiveIdx = room.p2Action.index;
-                }
+            // 素早さ順にソート（交代は最優先）
+            actions.sort((a, b) => {
+                const priority = (act) => act.type === 'switch' ? 999 : 0;
+                if (priority(a.act) !== priority(b.act)) return priority(b.act) - priority(a.act);
+                return b.char.battleSpd - a.char.battleSpd;
+            });
 
-                const c1 = room.p1Party[room.p1ActiveIdx];
-                const c2 = room.p2Party[room.p2ActiveIdx];
+            for (const a of actions) {
+                const attackerSide = a.p;
+                const targetSide = a.p === 1 ? 2 : 1;
+                const attacker = a.p === 1 ? room.p1Party[room.p1ActiveIdx] : room.p2Party[room.p2ActiveIdx];
+                const target = a.p === 1 ? room.p2Party[room.p2ActiveIdx] : room.p1Party[room.p1ActiveIdx];
 
-                outcomes.push({
-                    type: 'switch_sync',
-                    p1Idx: room.p1ActiveIdx, p1Char: { name: c1.name, baseStats: c1.baseStats, resistances: c1.resistances, currentHp: c1.currentHp, maxHp: c1.maxHp },
-                    p2Idx: room.p2ActiveIdx, p2Char: { name: c2.name, baseStats: c2.baseStats, resistances: c2.resistances, currentHp: c2.currentHp, maxHp: c2.maxHp }
-                });
-            } else {
-                // 通常ターン解決フェーズ
-                let acts = [
-                    { p: 1, act: room.p1Action, char: p1Active },
-                    { p: 2, act: room.p2Action, char: p2Active }
-                ];
+                if (attacker.isFainted) continue;
 
-                acts.sort((a, b) => {
-                    const priA = (a.act.type === 'switch' ? 1000 : (a.act.move?.priority || 0) * 100) + a.char.battleSpd;
-                    const priB = (b.act.type === 'switch' ? 1000 : (b.act.move?.priority || 0) * 100) + b.char.battleSpd;
-                    return priB - priA;
-                });
+                if (a.act.type === 'move') {
+                    const move = a.act.move;
 
-                for (let a of acts) {
-                    if (a.char.isFainted) continue;
-
-                    if (a.act.type === 'switch') {
-                        if (a.p === 1) room.p1ActiveIdx = a.act.index;
-                        else room.p2ActiveIdx = a.act.index;
-                        const nC = (a.p === 1 ? room.p1Party : room.p2Party)[a.act.index];
+                    // 1. 回復処理の実装
+                    if (move.effect && move.effect.type === 'heal') {
+                        const healAmt = Math.floor(attacker.maxHp * move.effect.value);
+                        attacker.currentHp = Math.min(attacker.maxHp, attacker.currentHp + healAmt);
                         outcomes.push({
-                            type: 'switch', p: a.p, index: a.act.index,
-                            charDetails: { name: nC.name, baseStats: nC.baseStats, resistances: nC.resistances, currentHp: nC.currentHp, maxHp: nC.maxHp }
+                            type: 'heal', p: attackerSide, moveName: move.name, healAmt, currentHp: attacker.currentHp
                         });
-                    } else {
-                        const targetSide = a.p === 1 ? 2 : 1;
-                        const target = (targetSide === 1 ? room.p1Party : room.p2Party)[targetSide === 1 ? room.p1ActiveIdx : room.p2ActiveIdx];
-                        const move = a.act.move;
+                    }
+
+                    // 2. バフ・デバフ処理の実装（耐性への干渉）
+                    if (move.effect && (move.effect.type === 'buff' || move.effect.type === 'debuff')) {
+                        const isBuff = move.effect.type === 'buff';
+                        const targetChar = move.effect.target === 'self' ? attacker : target;
+                        const effectSide = (move.effect.target === 'self' ? attackerSide : targetSide);
+
+                        if (move.effect.stat === 'def') {
+                            // 防御バフ/デバフは「その技の属性の耐性」を変化させる
+                            // 例: バフなら 0.5倍(ダメージ半減)、デバフなら 1.5倍(ダメージ増加)
+                            const resType = move.res_type;
+                            if (!targetChar.resistances[resType]) targetChar.resistances[resType] = 1.0;
+
+                            targetChar.resistances[resType] *= move.effect.value;
+
+                            outcomes.push({
+                                type: 'stat_change', p: attackerSide, moveName: move.name,
+                                targetP: effectSide, stat: 'resistance', resType, newValue: targetChar.resistances[resType]
+                            });
+                        } else if (move.effect.stat === 'atk') {
+                            targetChar.battleAtk *= move.effect.value;
+                            outcomes.push({ type: 'stat_change', p: attackerSide, moveName: move.name, targetP: effectSide, stat: 'atk' });
+                        }
+                    }
+
+                    // 3. ダメージ計算（バグ修正：耐性値をダメージ計算に確実に反映）
+                    if (move.power > 0) {
                         const resMult = target.resistances[move.res_type] || 1.0;
-                        const damage = Math.floor(move.power * (a.char.battleAtk / 80) * resMult);
+                        const damage = Math.floor((move.power * (attacker.battleAtk / 100)) * (1 / resMult));
 
                         target.currentHp = Math.max(0, target.currentHp - damage);
                         if (target.currentHp <= 0) target.isFainted = true;
 
                         outcomes.push({
-                            type: 'move', p: a.p, moveName: move.name, damage, resMult,
+                            type: 'move', p: attackerSide, moveName: move.name, damage, resMult,
                             targetP: targetSide, targetHp: target.currentHp, targetFainted: target.isFainted
                         });
-                        if (target.isFainted) break;
                     }
+                } else if (a.act.type === 'switch') {
+                    // ... (既存の交代処理) ...
+                    if (a.p === 1) room.p1ActiveIdx = a.act.index;
+                    else room.p2ActiveIdx = a.act.index;
+                    outcomes.push({ type: 'switch', p: a.p, index: a.act.index, char: (a.p === 1 ? room.p1Party[a.act.index] : room.p2Party[a.act.index]) });
                 }
             }
             io.to(roomId).emit('resolve_turn', { outcomes });
