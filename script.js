@@ -455,18 +455,15 @@ function updateCharDisplay(pNum, char) {
     // オンライン対戦かつ相手のキャラを表示する場合、情報を制限する
     const isOpponent = onlineState.isOnlineBattle && onlineState.role !== pNum;
 
-    let resHtml = '';
-    if (!isOpponent) {
-        resHtml = `<div class="resistance-grid ${pNum === 2 ? 'right' : ''}" style="margin-top: 8px;">`;
-        Object.entries(char.resistances).forEach(([id, val]) => {
-            const name = getResName(parseInt(id));
-            let cls = '';
-            if (val < 1.0) cls = 'res-resist';
-            else if (val > 1.0) cls = 'res-weak';
-            resHtml += `<div class="res-item ${cls}" style="font-size:0.65rem;">${name}:${Math.round(val * 100)}%</div>`;
-        });
-        resHtml += '</div>';
-    }
+    let resHtml = `<div class="resistance-grid ${pNum === 2 ? 'right' : ''}" style="margin-top: 8px;">`;
+    Object.entries(char.resistances).forEach(([id, val]) => {
+        const name = getResName(parseInt(id));
+        let cls = '';
+        if (val < 1.0) cls = 'res-resist';
+        else if (val > 1.0) cls = 'res-weak';
+        resHtml += `<div class="res-item ${cls}" style="font-size:0.65rem;">${name}:${Math.round(val * 100)}%</div>`;
+    });
+    resHtml += '</div>';
 
     if (isOpponent) {
         infoEl.innerHTML = `
@@ -474,6 +471,7 @@ function updateCharDisplay(pNum, char) {
             <div class="char-stats">
                 HP: ${Math.floor(char.currentHp)}/${char.maxHp}
             </div>
+            ${resHtml}
         `;
     } else {
         infoEl.innerHTML = `
@@ -928,11 +926,11 @@ function connectOnline() {
             msg.textContent = `レギュレーション: ${partySize} on ${partySize}。使用するパーティを選択してください。`;
 
             // 選択可能なパーティ一覧を表示
-            renderOnlinePartyList();
+            window.renderOnlinePartyList();
         });
 
         // パーティリストの描画（レギュレーションに合うものだけ表示）
-        function renderOnlinePartyList() {
+        window.renderOnlinePartyList = function() {
             const list = document.getElementById('online-party-list');
             // レギュレーションの数と一致するメンバー数のパーティだけを抽出
             const validParties = myParties.filter(p => p.members.length === onlineState.partyLimit);
@@ -951,7 +949,7 @@ function connectOnline() {
             <button class="primary-btn" onclick="window.submitOnlineParty(${p.id})">選択</button>
         </div>
     `).join('');
-        }
+        };
 
         // 承認ボタンの動作 (内部関数を削除し、グローバルに定義)
         // パーティ送信 (内部関数を削除し、グローバルに定義)
@@ -1099,33 +1097,9 @@ function renderOnlinePartySelect() {
     list.innerHTML = myParties.filter(p => p.members.length >= onlineState.partyLimit).map(p => `
         <div class="mini-list">
              <span>${p.name} (${p.members.length}体)</span>
-             <button class="primary-btn" style="width:auto; padding:8px;" onclick="confirmOnlineParty(${p.id})">決定</button>
+             <button class="primary-btn" style="width:auto; padding:8px;" onclick="window.submitOnlineParty(${p.id})">決定</button>
         </div>
     `).join('');
-}
-
-function confirmOnlineParty(pid) {
-    const party = myParties.find(p => p.id === pid);
-    // レギュレーション数に合わせて先頭から抽出
-    const selectedMembers = party.members.slice(0, onlineState.partyLimit);
-
-    // 自分のパーティをローカルセット
-    const initSet = (m) => ({
-        ...m,
-        maxHp: m.baseStats.hp,
-        currentHp: m.baseStats.hp,
-        battleSpd: m.baseStats.spd,
-        battleAtk: m.baseStats.atk,
-        isFainted: false
-    });
-
-    if (onlineState.role === 1) battleState.p1 = selectedMembers.map(initSet);
-    else battleState.p2 = selectedMembers.map(initSet);
-
-    // サーバーに送信 (詳細データごと送る)
-    socket.emit('submit_party', { roomId: onlineState.roomId, partyData: selectedMembers, role: onlineState.role });
-
-    document.getElementById('online-party-list').innerHTML = "<div>待機中...</div>";
 }
 
 function startOnlineBattle(oppSize) {

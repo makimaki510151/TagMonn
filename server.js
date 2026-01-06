@@ -118,13 +118,21 @@ io.on('connection', (socket) => {
             io.to(room.p1).emit('initial_pick_reveal', {
                 myIndex: room.p1Action.index,
                 oppIndex: room.p2Action.index,
-                oppActiveChar: p2ActiveChar,
+                oppActiveChar: {
+                    name: p2ActiveChar.name,
+                    baseStats: p2ActiveChar.baseStats,
+                    resistances: p2ActiveChar.resistances
+                },
                 oppPartySize: room.p2Party.length
             });
             io.to(room.p2).emit('initial_pick_reveal', {
                 myIndex: room.p2Action.index,
                 oppIndex: room.p1Action.index,
-                oppActiveChar: p1ActiveChar,
+                oppActiveChar: {
+                    name: p1ActiveChar.name,
+                    baseStats: p1ActiveChar.baseStats,
+                    resistances: p1ActiveChar.resistances
+                },
                 oppPartySize: room.p1Party.length
             });
             // アクションリセット
@@ -141,7 +149,14 @@ io.on('connection', (socket) => {
         // 交代アクションの場合、相手に情報を伝えるために詳細を付与する
         if (action.type === 'switch') {
             const myParty = role === 1 ? room.p1Party : room.p2Party;
-            action.charDetails = myParty[action.index];
+            const char = myParty[action.index];
+            // 相手に送る情報は制限する（名前、ステータス、耐性のみ。技は送らない）
+            action.charDetails = {
+                name: char.name,
+                baseStats: char.baseStats,
+                resistances: char.resistances,
+                currentHp: char.currentHp
+            };
         }
 
         if (role === 1) room.p1Action = action;
