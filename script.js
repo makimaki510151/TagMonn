@@ -297,29 +297,21 @@ function calculateStats(tags) {
 }
 
 function calculateResistances(tags) {
+    // 初期値 1.0
     let res = { 1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0 };
+
     tags.forEach(t => {
-        if (t.name === "悪性") { res[3] *= 1.5; res[4] *= 0.7; }
-        if (t.name === "善性") { res[4] *= 1.5; res[3] *= 0.7; }
-        if (t.name === "火精" || t.name === "水精" || t.name === "雷精" || t.name === "風精") { res[2] *= 0.8; }
-        if (t.name === "地精") { res[1] *= 0.8; res[2] *= 1.2; }
-        if (t.name === "機械") { res[1] *= 0.7; res[2] *= 1.3; }
-        if (t.name === "生体") { res[3] *= 0.8; res[4] *= 1.2; }
-        if (t.name === "飛翔") { res[1] *= 1.2; res[2] *= 0.8; }
-        if (t.name === "重厚") { res[1] *= 0.6; res[4] *= 1.4; }
-        if (t.name === "電脳") { res[3] *= 0.7; res[2] *= 1.3; }
-        if (t.name === "古龍") { res[2] *= 0.6; res[4] *= 1.2; }
-        if (t.name === "不死") { res[4] *= 0.5; res[3] *= 1.5; }
-        if (t.name === "虚空") { res[1] *= 0.5; res[3] *= 1.5; }
-        if (t.name === "剛腕") { res[1] *= 0.9; }
-        if (t.name === "俊足") { res[2] *= 0.9; }
-        if (t.name === "知性") { res[3] *= 0.9; }
-        if (t.name === "毒性") { res[4] *= 0.8; }
-        if (t.name === "硬質") { res[1] *= 0.9; res[2] *= 0.9; res[3] *= 0.9; res[4] *= 0.9; }
-        if (t.name === "幻影") { res[3] *= 0.8; res[1] *= 1.2; }
-        if (t.name === "磁力") { res[4] *= 0.9; res[1] *= 1.1; }
-        if (t.name === "音響") { res[2] *= 0.9; res[4] *= 1.1; }
+        // タグに res_mod が定義されている場合のみ処理
+        if (t.res_mod) {
+            Object.entries(t.res_mod).forEach(([resId, multiplier]) => {
+                // resId (1〜4) に対応する倍率を乗算
+                if (res[resId] !== undefined) {
+                    res[resId] *= multiplier;
+                }
+            });
+        }
     });
+
     return res;
 }
 
