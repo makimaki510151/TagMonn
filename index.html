@@ -7,21 +7,35 @@
     <title>Tagmon Build & Battle</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="modeManager.js"></script>
 </head>
 
 <body>
-    <header>
-        <h1>Tagmon Build</h1>
+    <header id="game-header" class="hidden">
+        <h1 id="mode-title">Tagmon Build</h1>
         <nav>
-            <button onclick="showSection('build')">キャラクタービルド</button>
-            <button onclick="showSection('party')">パーティ編成</button>
-            <button onclick="showSection('story')">ストーリー</button>
-            <button onclick="showSection('battle')">対戦</button>
+            <button id="nav-build" onclick="showSection('build')">キャラクタービルド</button>
+            <button id="nav-party" onclick="showSection('party')">パーティ編成</button>
+            <button id="nav-story" onclick="showSection('story')">ストーリー</button>
+            <button id="nav-battle" onclick="showSection('battle')">対戦</button>
+            <button onclick="returnToTitle()" style="background: #64748b; margin-left: auto;">タイトルへ</button>
         </nav>
     </header>
 
     <main>
-        <div id="detail-display">
+        <section id="title-section" class="panel">
+            <div style="text-align: center; padding: 50px 0;">
+                <h1 style="font-size: 3rem; margin-bottom: 10px; color: var(--primary);">Tagmon</h1>
+                <p style="color: var(--text-muted); margin-bottom: 40px;">Build & Battle Simulator</p>
+                
+                <div style="display: flex; flex-direction: column; gap: 20px; max-width: 300px; margin: 0 auto;">
+                    <button onclick="selectGameMode('story')" class="primary-btn" style="height: 80px; font-size: 1.2rem;">ストーリーモード</button>
+                    <button onclick="selectGameMode('free')" class="primary-btn" style="height: 80px; font-size: 1.2rem; background: #8b5cf6;">フリーモード</button>
+                </div>
+            </div>
+        </section>
+
+        <div id="detail-display" class="hidden">
             タグや技を選択・マウスオーバーすると、ここに詳細が表示されます。
         </div>
 

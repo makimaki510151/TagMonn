@@ -107,6 +107,12 @@ h3 { margin-top: 0; margin-bottom: 15px; font-size: 1.1rem; border-left: 4px sol
     font-size: 0.85rem;
 }
 .tag-btn.active { background: var(--primary); color: white; border-color: var(--primary-dark); }
+.tag-btn.locked {
+    background: #e2e8f0;
+    color: #94a3b8;
+    cursor: not-allowed;
+    border-style: dashed;
+}
 
 .mini-list {
     display: flex; justify-content: space-between; align-items: center;
