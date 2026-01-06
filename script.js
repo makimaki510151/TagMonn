@@ -56,11 +56,19 @@ async function checkServerStatus() {
 }
 
 function showBattleModeSelect() {
+    // showSection('battle') を先に呼び出し、その後の個別表示制御で上書きされないようにする
+    // ただし showSection 内で showBattleModeSelect を呼んでいるため、フラグで制御
+    if (window._isShowingBattleMode) return;
+    window._isShowingBattleMode = true;
+    
+    showSection('battle');
+    
     document.getElementById('battle-mode-select').classList.remove('hidden');
     document.getElementById('battle-setup').classList.add('hidden');
     document.getElementById('battle-field').classList.add('hidden');
     document.getElementById('online-section').classList.add('hidden');
-    showSection('battle');
+    
+    window._isShowingBattleMode = false;
 }
 
 function showBattleSetup(mode) {
@@ -69,13 +77,28 @@ function showBattleSetup(mode) {
         document.getElementById('battle-setup').classList.remove('hidden');
         renderBattleSetup();
     } else {
+        // オンライン対戦の場合、battle-sectionを表示したまま、その中の要素を制御
+        document.getElementById('battle-section').classList.remove('hidden');
         document.getElementById('online-section').classList.remove('hidden');
+        
         // オンラインセクション内の初期表示をリセット
         document.getElementById('online-login').classList.remove('hidden');
         document.getElementById('online-lobby').classList.add('hidden');
         document.getElementById('online-regulation').classList.add('hidden');
         document.getElementById('online-party-select').classList.add('hidden');
+        
+        checkServerStatus();
     }
+}
+
+function disconnectOnline() {
+    if (socket) {
+        socket.disconnect();
+        socket = null;
+    }
+    document.getElementById('online-lobby').classList.add('hidden');
+    document.getElementById('online-login').classList.remove('hidden');
+    addOnlineLog("サーバーから切断しました。");
 }
 
 async function loadData() {
@@ -143,8 +166,12 @@ function showSection(id) {
     if (id === 'build') renderBuildScreen();
     if (id === 'party') renderPartyScreen();
     if (id === 'battle') {
-        // 対戦タブが押された時は、対戦中ならそのまま、そうでなければモード選択を表示
-        if (!battleState.isProcessing && document.getElementById('battle-field').classList.contains('hidden')) {
+        // 対戦タブが押された時は、対戦中・準備中・オンラインロビー中ならそのまま、そうでなければモード選択を表示
+        const isBattleFieldVisible = !document.getElementById('battle-field').classList.contains('hidden');
+        const isBattleSetupVisible = !document.getElementById('battle-setup').classList.contains('hidden');
+        const isOnlineSectionVisible = !document.getElementById('online-section').classList.contains('hidden');
+        
+        if (!battleState.isProcessing && !isBattleFieldVisible && !isBattleSetupVisible && !isOnlineSectionVisible) {
             showBattleModeSelect();
         }
     }

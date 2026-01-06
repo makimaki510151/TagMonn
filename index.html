@@ -133,61 +133,61 @@
                 <button id="online-back-btn" class="primary-btn hidden" style="margin-top: 15px; background: #64748b;"
                     onclick="returnToLobby()">ロビーに戻る</button>
             </div>
-        </section>
 
-        <section id="online-section" class="panel hidden">
-            <div id="online-login">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                    <h3 style="margin: 0;">オンラインロビー</h3>
-                    <div id="server-status-indicator" style="display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--text-muted);">
-                        <span id="status-lamp" style="width: 10px; height: 10px; border-radius: 50%; background: #cbd5e1;"></span>
-                        <span id="status-text">サーバー確認中...</span>
+            <div id="online-section" class="hidden">
+                <div id="online-login">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h3 style="margin: 0;">オンラインロビー</h3>
+                        <div id="server-status-indicator" style="display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--text-muted);">
+                            <span id="status-lamp" style="width: 10px; height: 10px; border-radius: 50%; background: #cbd5e1;"></span>
+                            <span id="status-text">サーバー確認中...</span>
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 15px;">
+                        <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:5px;">プレイヤー名</label>
+                        <div style="display: flex; gap: 10px;">
+                            <input type="text" id="online-player-name" placeholder="あなたの名前" style="padding: 12px; flex: 1;">
+                            <button id="connect-btn" onclick="connectOnline()" class="primary-btn" style="width: auto; padding-left: 30px; padding-right: 30px;">接続</button>
+                        </div>
+                    </div>
+                    <button onclick="showBattleModeSelect()" class="tag-btn" style="width: 100%;">戻る</button>
+                </div>
+
+                <div id="online-lobby" class="hidden">
+                    <div class="stat-row">
+                        <span>ようこそ、<strong id="my-online-name"></strong>さん</span>
+                        <button class="tag-btn" onclick="disconnectOnline()">切断</button>
+                    </div>
+                    <hr>
+                    <div class="column-layout">
+                        <div>
+                            <h4>オンラインのプレイヤー</h4>
+                            <div id="online-player-list" class="saved-area"></div>
+                        </div>
+                        <div>
+                            <h4>通知 / ログ</h4>
+                            <div id="online-msg-area" class="stat-box" style="height: 200px; overflow-y: auto;"></div>
+                        </div>
                     </div>
                 </div>
-                <div style="margin-bottom: 15px;">
-                    <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:5px;">プレイヤー名</label>
-                    <div style="display: flex; gap: 10px;">
-                        <input type="text" id="online-player-name" placeholder="あなたの名前" style="padding: 12px; flex: 1;">
-                        <button id="connect-btn" onclick="connectOnline()" class="primary-btn" style="width: auto; padding-left: 30px; padding-right: 30px;">接続</button>
+
+                <div id="online-regulation" class="hidden">
+                    <h3>対戦レギュレーション設定</h3>
+                    <p>使用するパーティのキャラ数を選択してください。</p>
+                    <div class="grid-list" style="grid-template-columns: repeat(3, 1fr); max-width: 400px;">
+                        <button class="tag-btn" onclick="sendRegulation(1)">1 on 1</button>
+                        <button class="tag-btn" onclick="sendRegulation(3)">3 on 3</button>
+                        <button class="tag-btn" onclick="sendRegulation(6)">6 on 6</button>
+                    </div>
+                    <div id="reg-status" style="margin-top: 20px; padding: 15px; background: #f0f7ff; border-radius: 8px;">
                     </div>
                 </div>
-                <button onclick="showBattleModeSelect()" class="tag-btn" style="width: 100%;">戻る</button>
-            </div>
 
-            <div id="online-lobby" class="hidden">
-                <div class="stat-row">
-                    <span>ようこそ、<strong id="my-online-name"></strong>さん</span>
-                    <button class="tag-btn" onclick="disconnectOnline()">切断</button>
+                <div id="online-party-select" class="hidden">
+                    <h3>使用するパーティを選択</h3>
+                    <p id="party-select-msg"></p>
+                    <div id="online-party-list" class="saved-area"></div>
                 </div>
-                <hr>
-                <div class="column-layout">
-                    <div>
-                        <h4>オンラインのプレイヤー</h4>
-                        <div id="online-player-list" class="saved-area"></div>
-                    </div>
-                    <div>
-                        <h4>通知 / ログ</h4>
-                        <div id="online-msg-area" class="stat-box" style="height: 200px; overflow-y: auto;"></div>
-                    </div>
-                </div>
-            </div>
-
-            <div id="online-regulation" class="hidden">
-                <h3>対戦レギュレーション設定</h3>
-                <p>使用するパーティのキャラ数を選択してください。</p>
-                <div class="grid-list" style="grid-template-columns: repeat(3, 1fr); max-width: 400px;">
-                    <button class="tag-btn" onclick="sendRegulation(1)">1 on 1</button>
-                    <button class="tag-btn" onclick="sendRegulation(3)">3 on 3</button>
-                    <button class="tag-btn" onclick="sendRegulation(6)">6 on 6</button>
-                </div>
-                <div id="reg-status" style="margin-top: 20px; padding: 15px; background: #f0f7ff; border-radius: 8px;">
-                </div>
-            </div>
-
-            <div id="online-party-select" class="hidden">
-                <h3>使用するパーティを選択</h3>
-                <p id="party-select-msg"></p>
-                <div id="online-party-list" class="saved-area"></div>
             </div>
         </section>
     </main>
