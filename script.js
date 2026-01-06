@@ -79,6 +79,9 @@ function selectGameMode(mode) {
         battleNav.classList.remove('hidden');
         showSection('build');
     }
+    
+    // モード切り替え時にビルド画面をリセット
+    resetBuild();
 }
 
 function returnToTitle() {
@@ -233,11 +236,19 @@ function updateBuildPreview() {
         <div class="stat-row"><span>HP</span><strong>${stats.hp}</strong></div>
         <div class="stat-row"><span>ATK</span><strong>${stats.atk}</strong></div>
         <div class="stat-row"><span>SPD</span><strong>${stats.spd}</strong></div>
+        <div style="margin-top:10px; font-size:0.8rem; color:${currentBuild.tags.length < 1 ? 'var(--danger)' : 'var(--text-muted)'};">
+            タグ数: ${currentBuild.tags.length}/6
+        </div>
+        <div style="font-size:0.8rem; color:var(--text-muted);">技スロット: ${currentBuild.moves.length}/4</div>
         <hr>
         ${resHtml}
     `;
 
     renderMoveCandidates();
+
+    // 更新ボタンのテキスト切り替え
+    const saveBtn = document.getElementById('save-char-btn');
+    saveBtn.textContent = currentBuild.id ? "キャラクターを更新" : "キャラクターを保存";
 }
 
 function calculateStats(tags) {
@@ -293,44 +304,97 @@ function toggleMove(move) {
 }
 
 function saveCharacter() {
-    const name = document.getElementById('char-name').value;
-    if (!name) return alert("名前を入力してください");
+    const nameInput = document.getElementById('char-name');
+    if (!nameInput.value) return alert("名前を入力してください");
     if (currentBuild.tags.length === 0) return alert("タグを1つ以上選んでください");
 
-    const char = {
-        id: Date.now(),
-        name: name,
-        tags: [...currentBuild.tags],
-        moves: [...currentBuild.moves],
+    const charData = {
+        ...currentBuild,
+        name: nameInput.value,
         baseStats: calculateStats(currentBuild.tags),
         resistances: calculateResistances(currentBuild.tags)
     };
 
-    ModeManager.saveCharacter(char);
+    if (currentBuild.id) {
+        // 更新処理
+        ModeManager.updateCharacter(charData);
+    } else {
+        // 新規保存
+        charData.id = Date.now();
+        ModeManager.saveCharacter(charData);
+    }
+
     refreshLocalData();
-    
-    currentBuild = { id: null, name: "", tags: [], moves: [] };
-    document.getElementById('char-name').value = "";
+    resetBuild();
     renderBuildScreen();
 }
+
+function resetBuild() {
+    currentBuild = { id: null, name: "", tags: [], moves: [] };
+    document.getElementById('char-name').value = "";
+    // ボタンの表記などはupdateBuildPreviewでリセットされる
+}
+
+window.editChar = (id) => {
+    const char = myChars.find(c => c.id === id);
+    if (!char) return;
+    
+    // ストーリーモード以外のキャラはフリーモードでは編集可、
+    // ストーリーモードで作ったキャラはフリーモードでは閲覧のみ（または混在防止のため編集不可）にするのが安全
+    if (char.isStoryOrigin && ModeManager.currentMode === 'free') {
+        alert("ストーリーモードで作成したキャラクターはフリーモードでは編集できません。");
+        return;
+    }
+
+    currentBuild = JSON.parse(JSON.stringify(char)); // Deep copy
+    // タグオブジェクトなどがデータ読み込み時の参照と切れている場合を考慮し、IDベースで再取得するのが理想だが、
+    // ここでは保存されたオブジェクトをそのまま使う
+    
+    document.getElementById('char-name').value = char.name;
+    renderBuildScreen();
+    window.scrollTo(0, 0); // 画面上部へスクロール
+};
 
 function renderSavedChars() {
     const container = document.getElementById('saved-chars-list');
-    container.innerHTML = myChars.map(c => `
-        <div class="saved-item">
-            <span>${c.name} ${c.isStoryOrigin ? '<small>(Story)</small>' : ''}</span>
-            <button onclick="deleteChar(${c.id})" class="tag-btn" style="padding:2px 8px; background:var(--danger);">削除</button>
+    // saved-item クラスを mini-list に変更（CSSとの整合性）
+    container.innerHTML = myChars.map(c => {
+        // 現在のモードで編集可能か判定
+        const isEditable = !(c.isStoryOrigin && ModeManager.currentMode === 'free');
+        
+        return `
+        <div class="mini-list">
+            <span style="font-weight:600; cursor:${isEditable ? 'pointer' : 'default'};" 
+                  onclick="${isEditable ? `editChar(${c.id})` : ''}">
+                ${c.name} ${c.isStoryOrigin ? '<small>(Story)</small>' : ''} 
+                ${isEditable ? '<small style="color:var(--primary); margin-left:5px;">(編集)</small>' : ''}
+            </span>
+            <button onclick="deleteChar(${c.id})" class="del-btn">×</button>
         </div>
-    `).join('');
+    `;
+    }).join('');
 }
 
 window.deleteChar = (id) => {
+    if (!confirm("キャラを削除しますか？")) return;
     const key = ModeManager.currentMode === 'free' ? 'tm_free_chars' : 'tm_story_chars';
+    
+    // 削除対象が現在のモードのデータに含まれているか確認
     let chars = JSON.parse(localStorage.getItem(key) || '[]');
-    chars = chars.filter(c => c.id !== id);
+    const targetIdx = chars.findIndex(c => c.id === id);
+    
+    if (targetIdx === -1) {
+        // フリーモードで表示されているストーリーキャラを消そうとした場合など
+        alert("このモードでは削除できないキャラクターです。");
+        return;
+    }
+
+    chars.splice(targetIdx, 1);
     localStorage.setItem(key, JSON.stringify(chars));
     refreshLocalData();
     renderBuildScreen();
+    // 編集中のキャラだった場合リセット
+    if (currentBuild.id === id) resetBuild();
 };
 
 function renderPartyScreen() {
@@ -350,17 +414,17 @@ function renderPartyScreen() {
 
     const curr = document.getElementById('current-party-list');
     curr.innerHTML = currentPartyMembers.map((c, i) => `
-        <div class="saved-item">
+        <div class="mini-list">
             <span>${i + 1}. ${c.name}</span>
-            <button onclick="removeFromParty(${i})" class="tag-btn">外す</button>
+            <button onclick="removeFromParty(${i})" class="del-btn">×</button>
         </div>
     `).join('');
 
     const saved = document.getElementById('saved-parties-list');
     saved.innerHTML = myParties.map(p => `
-        <div class="saved-item">
+        <div class="mini-list">
             <span>${p.name} (${p.members.length}体) ${p.isStoryOrigin ? '<small>(Story)</small>' : ''}</span>
-            <button onclick="deleteParty(${p.id})" class="tag-btn" style="background:var(--danger);">削除</button>
+            <button onclick="deleteParty(${p.id})" class="del-btn">×</button>
         </div>
     `).join('');
 }
@@ -371,6 +435,7 @@ window.removeFromParty = (i) => {
 };
 
 window.deleteParty = (id) => {
+    if (!confirm("パーティを削除しますか？")) return;
     const key = ModeManager.currentMode === 'free' ? 'tm_free_parties' : 'tm_story_parties';
     let parties = JSON.parse(localStorage.getItem(key) || '[]');
     parties = parties.filter(p => p.id !== id);
@@ -405,7 +470,7 @@ function renderStoryScreen() {
     list.innerHTML = gameData.story_stages.map(s => {
         const isCleared = progress.clearedStages.includes(s.id);
         return `
-            <div class="saved-item" style="flex-direction: column; align-items: flex-start; gap: 10px; padding: 15px;">
+            <div class="mini-list" style="flex-direction: column; align-items: flex-start; gap: 10px; padding: 15px; height: auto;">
                 <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
                     <strong>第${s.id}話: ${s.title}</strong>
                     ${isCleared ? '<span style="color:var(--success); font-weight:bold;">CLEAR!</span>' : ''}
@@ -820,6 +885,19 @@ window.returnToLobby = () => { location.reload(); };
 
 async function processOnlineTurn(outcomes) {
     // オンライン用のターン処理（サーバーからの結果を反映）
-    // 以前のコードから必要な部分を抽出して実装
-    console.log("Online turn outcomes:", outcomes);
+    battleState.isProcessing = true;
+    for (let out of outcomes) {
+        if (out.type === 'move') {
+             log(`P${out.p}: ${out.attackerName}の ${out.moveName}！`);
+             if (out.isHit) {
+                 log(`${out.damage}のダメージ！`);
+             } else {
+                 log("攻撃は外れた！");
+             }
+        } else if (out.type === 'switch') {
+             log(`P${out.p}: ${out.char.name}に交代！`);
+        }
+    }
+    battleState.isProcessing = false;
+    updateBattleUI();
 }

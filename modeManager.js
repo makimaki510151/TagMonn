@@ -75,6 +75,21 @@ const ModeManager = {
         localStorage.setItem(key, JSON.stringify(chars));
     },
 
+    // 既存キャラの更新用
+    updateCharacter: function(char) {
+        const key = this.currentMode === this.MODES.FREE ? 'tm_free_chars' : 'tm_story_chars';
+        let chars = JSON.parse(localStorage.getItem(key) || '[]');
+        const idx = chars.findIndex(c => c.id === char.id);
+        
+        if (idx !== -1) {
+            chars[idx] = char;
+            localStorage.setItem(key, JSON.stringify(chars));
+        } else {
+            // IDが見つからない場合は新規扱い（あるいはエラーだが、ここでは新規保存）
+            this.saveCharacter(char);
+        }
+    },
+
     saveParty: function(party) {
         const key = this.currentMode === this.MODES.FREE ? 'tm_free_parties' : 'tm_story_parties';
         const parties = JSON.parse(localStorage.getItem(key) || '[]');
