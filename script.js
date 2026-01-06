@@ -42,16 +42,70 @@ window.onload = async () => {
 async function checkServerStatus() {
     const lamp = document.getElementById('status-lamp');
     const text = document.getElementById('status-text');
-    if (!lamp || !text) return;
+    const joinBtn = document.getElementById('join-btn');
+    if (!lamp || !text) return false;
 
     try {
-        // サーバーが生きているか簡易チェック (Socket.ioのパスを確認)
-        const res = await fetch(`${DEFAULT_SERVER_URL}/socket.io/?EIO=4&transport=polling`, { mode: 'no-cors' });
+        // タイムアウト付きでチェック（3秒応答がなければ失敗とみなす）
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+        const res = await fetch(`${DEFAULT_SERVER_URL}/socket.io/?EIO=4&transport=polling`, {
+            mode: 'no-cors',
+            signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
         lamp.style.background = 'var(--success)';
         text.textContent = 'サーバー稼働中';
+        if (joinBtn) {
+            joinBtn.disabled = false;
+            joinBtn.style.opacity = '1';
+        }
+        return true;
     } catch (e) {
         lamp.style.background = 'var(--danger)';
         text.textContent = 'サーバー停止中';
+        if (joinBtn) {
+            joinBtn.disabled = true;
+            joinBtn.style.opacity = '0.5';
+            joinBtn.style.cursor = 'not-allowed';
+        }
+        return false;
+    }
+} async function checkServerStatus() {
+    const lamp = document.getElementById('status-lamp');
+    const text = document.getElementById('status-text');
+    const joinBtn = document.getElementById('join-btn');
+    if (!lamp || !text) return false;
+
+    try {
+        // タイムアウト付きでチェック（3秒応答がなければ失敗とみなす）
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+        const res = await fetch(`${DEFAULT_SERVER_URL}/socket.io/?EIO=4&transport=polling`, {
+            mode: 'no-cors',
+            signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+        lamp.style.background = 'var(--success)';
+        text.textContent = 'サーバー稼働中';
+        if (joinBtn) {
+            joinBtn.disabled = false;
+            joinBtn.style.opacity = '1';
+        }
+        return true;
+    } catch (e) {
+        lamp.style.background = 'var(--danger)';
+        text.textContent = 'サーバー停止中';
+        if (joinBtn) {
+            joinBtn.disabled = true;
+            joinBtn.style.opacity = '0.5';
+            joinBtn.style.cursor = 'not-allowed';
+        }
+        return false;
     }
 }
 
