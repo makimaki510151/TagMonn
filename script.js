@@ -651,7 +651,11 @@ function renderOnlineSelection(pNum, container) {
         const grid = container.querySelector('.action-grid');
         generateSelectionButtons(pNum, grid);
     } else {
-        container.innerHTML = `<h4>相手の選出待ち...</h4>`;
+        if (battleState.isProcessing) {
+            container.innerHTML = "";
+        } else {
+            container.innerHTML = `<h4>相手の選択待ち...</h4>`;
+        }
     }
 }
 
@@ -1238,6 +1242,9 @@ function connectOnline() {
 
         socket.on('resolve_turn', async ({ outcomes }) => {
             battleState.isProcessing = true;
+
+            document.getElementById('move-actions').innerHTML = "";
+            document.getElementById('switch-actions').innerHTML = "";
 
             for (const out of outcomes) {
                 if (out.type === 'move') {
