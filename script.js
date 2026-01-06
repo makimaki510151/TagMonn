@@ -805,15 +805,20 @@ function renderActionPanel(pNum, char, containerId) {
 
 function handleAction(pNum, action) {
     if (onlineState.isOnlineBattle) {
+        // 既に処理中なら受け付けない
+        if (battleState.isProcessing) return;
+
         // サーバーへ送信
         socket.emit('submit_action', { roomId: onlineState.roomId, role: onlineState.role, action });
-        // 自分のアクションだけ仮セットしてUIロック
-        if (pNum === 1) battleState.p1NextAction = action;
+        
+        // 自分のアクションをセット
+        if (onlineState.role === 1) battleState.p1NextAction = action;
         else battleState.p2NextAction = action;
 
-        // 既にアクション選択済みならオーバーレイを表示
+        // 待機オーバーレイを表示
         document.getElementById('waiting-overlay').classList.remove('hidden');
-        // パネルを更新して選択不能にする
+        
+        // UIを更新してボタンを無効化（または「待機中」表示にする）
         updateBattleUI();
     } else {
         // ローカル
@@ -1248,6 +1253,9 @@ function connectOnline() {
 
         socket.on('resolve_turn', async ({ outcomes }) => {
             battleState.isProcessing = true;
+            
+            // ターン解決開始時に待機オーバーレイを隠す
+            document.getElementById('waiting-overlay').classList.add('hidden');
 
             document.getElementById('move-actions').innerHTML = "";
             document.getElementById('switch-actions').innerHTML = "";
@@ -1310,6 +1318,10 @@ function connectOnline() {
                     document.getElementById('waiting-overlay').classList.remove('hidden');
                 }
             }
+            
+            // 次のターンのためにアクションをリセット
+            battleState.p1NextAction = null;
+            battleState.p2NextAction = null;
             
             updateBattleUI();
         });

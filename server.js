@@ -229,14 +229,13 @@ io.on('connection', (socket) => {
                         }
                     }
                 } else if (a.act.type === 'switch') {
+                    const prevIdx = a.p === 1 ? room.p1ActiveIdx : room.p2ActiveIdx;
+                    
                     if (a.p === 1) room.p1ActiveIdx = a.act.index;
                     else room.p2ActiveIdx = a.act.index;
                     
                     const activeChar = a.p === 1 ? room.p1Party[room.p1ActiveIdx] : room.p2Party[room.p2ActiveIdx];
                     
-                    // 通常の交代か、死に出しかを判定
-                    // 既にoutcomesにダメージ等がある場合は死に出しの可能性があるが、
-                    // ここでは単純に交代イベントとして送る
                     outcomes.push({ 
                         type: 'switch', 
                         p: a.p, 
@@ -244,8 +243,14 @@ io.on('connection', (socket) => {
                         char: activeChar 
                     });
                     
-                    // 死に出し（forced switch）の場合は、個別にrevealイベントを送る必要がある場合がある
-                    // クライアント側でresolve_turnの後に判定しているため、ここではoutcomesに含めるだけで基本OK
+                    // 死に出し（forced switch）の場合、相手に新しいキャラの情報を通知する必要がある
+                    // 通常の交代でも同様だが、特に死に出し時はクライアント側で待機が発生するため重要
+                    const opponentId = a.p === 1 ? room.p2 : room.p1;
+                    io.to(opponentId).emit('forced_switch_reveal', { 
+                        role: a.p, 
+                        index: a.act.index, 
+                        activeChar: activeChar 
+                    });
                 }
             }
             io.to(roomId).emit('resolve_turn', { outcomes });
