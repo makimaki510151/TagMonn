@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tagmon Build & Battle</title>
     <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 </head>
 <body>
     <header>
@@ -13,6 +14,7 @@
             <button onclick="showSection('build')">キャラクタービルド</button>
             <button onclick="showSection('party')">パーティ編成</button>
             <button onclick="showSection('battle')">ローカル対戦</button>
+            <button onclick="showSection('online')">オンライン対戦</button>
         </nav>
     </header>
 
@@ -64,7 +66,7 @@
 
         <section id="battle-section" class="panel hidden">
             <div id="battle-setup">
-                <h3>対戦準備</h3>
+                <h3>対戦準備 (Local)</h3>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px;">
                     <div>
                         <h4 style="margin-bottom: 10px; color: var(--text-muted);">Player 1 (自分)</h4>
@@ -79,6 +81,10 @@
             </div>
 
             <div id="battle-field" class="hidden">
+                <div id="waiting-overlay" class="hidden">
+                    <div class="loading-msg">相手の通信待機中...</div>
+                </div>
+
                 <div class="battle-header">
                     <div class="side-ui left" id="p1-active-area">
                         <div id="p1-active-info"></div>
@@ -105,6 +111,61 @@
                     <div id="move-actions" class="control-group"></div>
                     <div id="switch-actions" class="control-group"></div>
                 </div>
+
+                <button id="online-back-btn" class="primary-btn hidden" style="margin-top: 15px; background: #64748b;" onclick="returnToLobby()">ロビーに戻る</button>
+            </div>
+        </section>
+
+        <section id="online-section" class="panel hidden">
+            <div id="online-login">
+                <h3>オンラインロビーに入室</h3>
+                <div style="margin-bottom: 15px;">
+                    <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:5px;">サーバーURL (例: https://xxxx.pinggy.io)</label>
+                    <input type="text" id="online-server-url" placeholder="空欄の場合は現在の場所(localhost等)に接続" style="padding: 12px; width: 100%; box-sizing: border-box;">
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:5px;">プレイヤー名</label>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" id="online-player-name" placeholder="あなたの名前" style="padding: 12px; flex: 1;">
+                        <button onclick="connectOnline()" class="primary-btn" style="width: auto; padding-left: 30px; padding-right: 30px;">接続</button>
+                    </div>
+                </div>
+                <p style="font-size: 0.9rem; color: var(--text-muted);">※サーバーが起動している必要があります。</p>
+            </div>
+
+            <div id="online-lobby" class="hidden">
+                <div class="stat-row">
+                    <span>ようこそ、<strong id="my-online-name"></strong>さん</span>
+                    <button class="tag-btn" onclick="disconnectOnline()">切断</button>
+                </div>
+                <hr>
+                <div class="column-layout">
+                    <div>
+                        <h4>オンラインのプレイヤー</h4>
+                        <div id="online-player-list" class="saved-area"></div>
+                    </div>
+                    <div>
+                        <h4>通知 / ログ</h4>
+                        <div id="online-msg-area" class="stat-box" style="height: 200px; overflow-y: auto;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="online-regulation" class="hidden">
+                <h3>対戦レギュレーション設定</h3>
+                <p>使用するパーティのキャラ数を選択してください。</p>
+                <div class="grid-list" style="grid-template-columns: repeat(3, 1fr); max-width: 400px;">
+                    <button class="tag-btn" onclick="sendRegulation(1)">1 on 1</button>
+                    <button class="tag-btn" onclick="sendRegulation(3)">3 on 3</button>
+                    <button class="tag-btn" onclick="sendRegulation(6)">6 on 6</button>
+                </div>
+                <div id="reg-status" style="margin-top: 10px; color: var(--primary);"></div>
+            </div>
+
+            <div id="online-party-select" class="hidden">
+                <h3>使用するパーティを選択</h3>
+                <p id="party-select-msg"></p>
+                <div id="online-party-list" class="saved-area"></div>
             </div>
         </section>
     </main>

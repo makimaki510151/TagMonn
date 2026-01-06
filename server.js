@@ -8,174 +8,162 @@ const io = new Server(server, {
     cors: { origin: "*" }
 });
 
-let users = {}; // socket.id -> { name, state, id }
-let battles = {}; // battleId -> { p1, p2, regulations, state, actions }
+// 静的ファイルの配信（ローカル確認用）
+app.use(express.static(__dirname));
+
+let players = {}; // socket.id -> { name, status, roomId }
+let rooms = {};   // roomId -> { p1: socketId, p2: socketId, p1Ready: bool, p2Ready: bool, ... }
 
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
 
-    // ユーザー参加
-    socket.on('join_lobby', (userData) => {
-        users[socket.id] = {
-            id: socket.id,
-            name: userData.name,
-            state: 'lobby' // lobby, preparing, battling
-        };
-        io.emit('update_user_list', Object.values(users));
+    // 1. ロビー入室
+    socket.on('join_lobby', (name) => {
+        players[socket.id] = { name: name, status: 'idle', id: socket.id };
+        io.emit('update_player_list', Object.values(players));
     });
 
-    // 対戦申し込み
+    // 2. 対戦申し込み
     socket.on('send_challenge', (targetId) => {
-        const challenger = users[socket.id];
-        if (challenger && users[targetId] && users[targetId].state === 'lobby') {
-            io.to(targetId).emit('receive_challenge', {
-                fromId: socket.id,
-                fromName: challenger.name
-            });
+        if (players[targetId] && players[targetId].status === 'idle') {
+            io.to(targetId).emit('receive_challenge', { fromId: socket.id, fromName: players[socket.id].name });
         }
     });
 
-    // 対戦拒否
-    socket.on('decline_challenge', (targetId) => {
-        io.to(targetId).emit('challenge_declined', { name: users[socket.id].name });
-    });
+    // 3. 対戦受諾・拒否
+    socket.on('respond_challenge', ({ targetId, accept }) => {
+        if (accept) {
+            // 部屋作成
+            const roomId = `room_${Date.now()}_${Math.random()}`;
+            players[socket.id].status = 'battle';
+            players[targetId].status = 'battle';
+            players[socket.id].roomId = roomId;
+            players[targetId].roomId = roomId;
 
-    // 対戦承諾 & レギュレーション設定へ
-    socket.on('accept_challenge', (targetId) => {
-        const p1 = users[targetId]; // 申し込んだ側
-        const p2 = users[socket.id]; // 受けた側
-
-        if (p1 && p2) {
-            const battleId = `battle_${Date.now()}`;
-            p1.state = 'preparing';
-            p2.state = 'preparing';
-            
-            battles[battleId] = {
-                id: battleId,
-                p1: p1.id,
-                p2: p2.id,
-                phase: 'regulation',
-                readyCount: 0,
-                partyData: {},
-                initialPicks: {},
-                actions: {}
+            rooms[roomId] = {
+                p1: targetId, // 申し込んだ側をP1とする
+                p2: socket.id, // 受けた側をP2とする
+                regulation: null,
+                p1Party: null,
+                p2Party: null,
+                p1Action: null,
+                p2Action: null
             };
 
-            // 両者にレギュレーション画面を表示させる
-            io.to(p1.id).emit('start_regulation', { battleId, opponent: p2.name, isHost: true });
-            io.to(p2.id).emit('start_regulation', { battleId, opponent: p1.name, isHost: false });
+            // 両者に通知（P1, P2の割り当て）
+            io.to(targetId).emit('match_established', { roomId, role: 1, opponentName: players[socket.id].name });
+            io.to(socket.id).emit('match_established', { roomId, role: 2, opponentName: players[targetId].name });
             
-            io.emit('update_user_list', Object.values(users));
+            io.emit('update_player_list', Object.values(players));
+        } else {
+            io.to(targetId).emit('challenge_declined', { fromName: players[socket.id].name });
         }
     });
 
-    // レギュレーション決定 (Hostのみが送信)
-    socket.on('set_regulation', ({ battleId, partySize }) => {
-        const battle = battles[battleId];
-        if (battle) {
-            battle.regulations = { partySize };
-            battle.phase = 'party_select';
-            // 両者にパーティ選択画面へ移行指示
-            io.to(battle.p1).emit('go_to_party_select', { partySize });
-            io.to(battle.p2).emit('go_to_party_select', { partySize });
-        }
+    // 4. レギュレーション設定
+    socket.on('propose_regulation', ({ roomId, partySize }) => {
+        const room = rooms[roomId];
+        if (!room) return;
+        io.to(room.p1).to(room.p2).emit('regulation_proposed', { partySize });
     });
 
-    // パーティ＆初期キャラ選択完了
-    socket.on('submit_party', ({ battleId, party, initialIndex }) => {
-        const battle = battles[battleId];
-        if (!battle) return;
-
-        // データの保存（相手にはまだ見せない）
-        battle.partyData[socket.id] = party;
-        battle.initialPicks[socket.id] = initialIndex;
-        battle.readyCount++;
-
-        if (battle.readyCount === 2) {
-            battle.phase = 'battle';
-            battle.readyCount = 0; // アクション待ち用にリセット
-
-            // 両者のデータが揃ったので、相手の情報を（技を隠して）送信
-            const p1Data = battle.partyData[battle.p1];
-            const p2Data = battle.partyData[battle.p2];
-            const p1Init = battle.initialPicks[battle.p1];
-            const p2Init = battle.initialPicks[battle.p2];
-
-            // P1に送るデータ（P2の技は隠す）
-            io.to(battle.p1).emit('battle_start', {
-                myParty: p1Data,
-                myInitial: p1Init,
-                oppParty: sanitizeParty(p2Data), // 技ID等を隠蔽または削除
-                oppInitial: p2Init,
-                isP1: true
-            });
-
-            // P2に送るデータ（P1の技は隠す）
-            io.to(battle.p2).emit('battle_start', {
-                myParty: p2Data,
-                myInitial: p2Init,
-                oppParty: sanitizeParty(p1Data),
-                oppInitial: p1Init,
-                isP1: false
-            });
-            
-            // ユーザー状態更新
-            users[battle.p1].state = 'battling';
-            users[battle.p2].state = 'battling';
-            io.emit('update_user_list', Object.values(users));
-        }
+    socket.on('accept_regulation', ({ roomId }) => {
+        // 片方が同意したら即決定とする（簡易実装）
+        io.to(roomId).emit('regulation_decided');
     });
 
-    // バトルアクション受信
-    socket.on('submit_action', ({ battleId, action }) => {
-        const battle = battles[battleId];
-        if (!battle) return;
-
-        battle.actions[socket.id] = action;
+    // 5. パーティ情報送信
+    socket.on('submit_party', ({ roomId, partyData, role }) => {
+        const room = rooms[roomId];
+        if (!room) return;
         
-        // 両者のアクションが揃ったら
-        if (Object.keys(battle.actions).length === 2) {
-            // クライアント側で計算させるため、お互いのアクションを開示
-            // ※本来はサーバーで計算すべきだが、構造理解のためリレー方式を採用
-            io.to(battle.p1).emit('resolve_turn', {
-                oppAction: battle.actions[battle.p2]
-            });
-            io.to(battle.p2).emit('resolve_turn', {
-                oppAction: battle.actions[battle.p1]
-            });
-            
-            battle.actions = {}; // リセット
-        }
-    });
-    
-    // バトル終了
-    socket.on('battle_end', ({ battleId }) => {
-        const battle = battles[battleId];
-        if(battle) {
-             users[battle.p1].state = 'lobby';
-             users[battle.p2].state = 'lobby';
-             delete battles[battleId];
-             io.emit('update_user_list', Object.values(users));
+        if (role === 1) room.p1Party = partyData;
+        else room.p2Party = partyData;
+
+        if (room.p1Party && room.p2Party) {
+            // 両者揃ったらバトル開始画面へ。ただし相手の具体的な技は見せない
+            io.to(room.p1).emit('battle_ready_selection', { opponentPartySize: room.p2Party.length });
+            io.to(room.p2).emit('battle_ready_selection', { opponentPartySize: room.p1Party.length });
         }
     });
 
-    // 切断
-    socket.on('disconnect', () => {
-        if (users[socket.id]) {
-            delete users[socket.id];
-            io.emit('update_user_list', Object.values(users));
+    // 6. 初手キャラ選択
+    socket.on('submit_initial_pick', ({ roomId, role, index }) => {
+        const room = rooms[roomId];
+        if (!room) return;
+
+        if (role === 1) room.p1Action = { type: 'initial', index }; // actionスロットを一時利用
+        else room.p2Action = { type: 'initial', index };
+
+        if (room.p1Action && room.p2Action) {
+            // 両者選択完了。相手の情報を公開
+            io.to(room.p1).emit('initial_pick_reveal', { 
+                myIndex: room.p1Action.index,
+                oppIndex: room.p2Action.index,
+                oppParty: room.p2Party // ここで初めて相手のパーティ詳細を送る
+            });
+            io.to(room.p2).emit('initial_pick_reveal', { 
+                myIndex: room.p2Action.index,
+                oppIndex: room.p1Action.index,
+                oppParty: room.p1Party 
+            });
+            // アクションリセット
+            room.p1Action = null;
+            room.p2Action = null;
         }
     });
+
+    // 7. アクション送信
+    socket.on('submit_action', ({ roomId, role, action }) => {
+        const room = rooms[roomId];
+        if (!room) return;
+
+        if (role === 1) room.p1Action = action;
+        else room.p2Action = action;
+
+        // 両方のアクションが揃ったら解決指示を出す
+        if (room.p1Action && room.p2Action) {
+            const data = {
+                p1Action: room.p1Action,
+                p2Action: room.p2Action
+            };
+            io.to(room.p1).to(room.p2).emit('resolve_turn', data);
+            
+            room.p1Action = null;
+            room.p2Action = null;
+        }
+    });
+
+    // 8. 終了・切断
+    socket.on('leave_battle', () => {
+        resetPlayer(socket);
+    });
+
+    socket.on('disconnect', () => {
+        resetPlayer(socket);
+        console.log('User disconnected:', socket.id);
+    });
+
+    function resetPlayer(s) {
+        if (players[s.id]) {
+            const roomId = players[s.id].roomId;
+            if (roomId && rooms[roomId]) {
+                const room = rooms[roomId];
+                const opponentId = room.p1 === s.id ? room.p2 : room.p1;
+                io.to(opponentId).emit('opponent_left');
+                if (players[opponentId]) {
+                    players[opponentId].status = 'idle';
+                    players[opponentId].roomId = null;
+                }
+                delete rooms[roomId];
+            }
+            delete players[s.id];
+            io.emit('update_player_list', Object.values(players));
+        }
+    }
 });
 
-// 相手に見せる情報のフィルタリング（技の詳細を隠す）
-function sanitizeParty(party) {
-    return party.map(char => ({
-        ...char,
-        moves: [] // 技情報を空にする（クライアント側で見えないようにする）
-    }));
-}
-
-server.listen(3000, () => {
-    console.log('Server is running on port 3000');
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
 });

@@ -216,3 +216,27 @@ h3 { margin-top: 0; margin-bottom: 15px; font-size: 1.1rem; border-left: 4px sol
     50% { opacity: 0.3; }
 }
 .flash { animation: flash 0.1s ease-in-out 0s 3; }
+
+/* オンライン用追加CSS */
+.player-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px; border-bottom: 1px solid var(--border);
+}
+.player-row button {
+    padding: 6px 12px; font-size: 0.8rem; background: var(--success);
+    color: white; border: none; border-radius: 6px; cursor: pointer;
+}
+.challenge-modal {
+    background: #fff; border: 2px solid var(--primary); padding: 10px;
+    border-radius: 8px; margin-bottom: 10px;
+    display: flex; justify-content: space-between; align-items: center;
+}
+#waiting-overlay {
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(255,255,255,0.8); z-index: 50;
+    display: flex; justify-content: center; align-items: center;
+    border-radius: 16px;
+}
+.loading-msg {
+    font-size: 1.5rem; font-weight: bold; color: var(--text-muted);
+}
