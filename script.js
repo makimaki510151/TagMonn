@@ -115,7 +115,7 @@ function showDetail(item, type) {
     if (!detailBox) return;
     let html = `<strong>${item.name}</strong><br>`;
     if (type === 'tag') {
-        html += `HP:${item.hp > 0 ? '+' : ''}${item.hp} / ATK:${item.atk > 0 ? '+' : ''}${item.atk} / SPD:${item.spd || 0}<br>`;
+        html += `HP:${item.hp || 0}${item.hp} / ATK:${item.atk || 0}${item.atk} / SPD:${item.spd || 0}<br>`;
         html += `<small>${item.description}</small>`;
     } else if (type === 'move') {
         const resName = getResName(item.res_type);
