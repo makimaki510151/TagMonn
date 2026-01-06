@@ -1238,62 +1238,33 @@ function connectOnline() {
 
         socket.on('resolve_turn', async ({ outcomes }) => {
             battleState.isProcessing = true;
-            const logArea = document.getElementById('battle-log');
 
             for (const out of outcomes) {
-                // 1. ダメージ・攻撃の処理
                 if (out.type === 'move') {
                     log(`P${out.p}の${out.moveName}！`);
-                    if (out.damage !== undefined) {
-                        log(`${out.damage}のダメージ！`);
-
-                        // データの同期
-                        const targetSide = out.targetP === 1 ? battleState.p1 : battleState.p2;
-                        const targetIdx = out.targetP === 1 ? battleState.p1ActiveIdx : battleState.p2ActiveIdx;
-
-                        targetSide[targetIdx].currentHp = out.targetHp;
-                        targetSide[targetIdx].isFainted = out.targetFainted;
-
-                        // ダメージアニメーション（もしCSSクラスがあれば）
-                        const targetEl = document.getElementById(out.targetP === 1 ? 'p1-active' : 'p2-active');
-                        if (targetEl) {
-                            targetEl.classList.add('shake');
-                            setTimeout(() => targetEl.classList.remove('shake'), 500);
-                        }
-                    }
+                    log(`${out.damage}のダメージ！`);
+                    const targetSide = out.targetP === 1 ? battleState.p1 : battleState.p2;
+                    const targetIdx = out.targetP === 1 ? battleState.p1ActiveIdx : battleState.p2ActiveIdx;
+                    targetSide[targetIdx].currentHp = out.targetHp;
+                    targetSide[targetIdx].isFainted = out.targetFainted;
                 }
-
-                // 2. 回復（heal）の処理
                 else if (out.type === 'heal') {
                     log(`P${out.p}の${out.moveName}！ HPが${out.healAmt}回復した！`);
-
                     const side = out.p === 1 ? battleState.p1 : battleState.p2;
                     const idx = out.p === 1 ? battleState.p1ActiveIdx : battleState.p2ActiveIdx;
-
-                    // サーバー側の最新HPに同期
                     side[idx].currentHp = out.currentHp;
                 }
-
-                // 3. バフ・デバフ（耐性・能力変化）の処理
                 else if (out.type === 'stat_change') {
                     const side = out.targetP === 1 ? battleState.p1 : battleState.p2;
                     const idx = out.targetP === 1 ? battleState.p1ActiveIdx : battleState.p2ActiveIdx;
 
                     if (out.stat === 'resistance') {
-                        // 耐性値の書き換え
                         side[idx].resistances[out.resType] = out.newValue;
-
-                        // 耐性の増減によってメッセージを変える
-                        // 1.0より小さくなればダメージが減るので「耐性が上がった」
-                        const isBuff = out.newValue < 1.0;
-                        log(`P${out.p}の${out.moveName}！ P${out.targetP}の耐性が${isBuff ? '上がった' : '下がった'}！`);
-                    } else {
-                        // ATKやSPDなど他のステータスの場合
-                        log(`P${out.p}の${out.moveName}！ P${out.targetP}の${out.stat.toUpperCase()}が変化した！`);
+                        const msg = out.isBuff ? "耐性が上がった！" : "耐性が下がった！";
+                        const targetName = out.targetP === onlineState.role ? "自分" : "相手";
+                        log(`P${out.p}の${out.moveName}！ ${targetName}の${msg}`);
                     }
                 }
-
-                // 4. 交代の処理
                 else if (out.type === 'switch') {
                     log(`P${out.p}は${out.char.name}に交代！`);
                     if (out.p === 1) {
@@ -1305,14 +1276,11 @@ function connectOnline() {
                     }
                 }
 
-                // UIの更新とウェイト
                 updateBattleUI();
-                await new Promise(r => setTimeout(r, 800)); // 演出のための待ち時間
+                await new Promise(r => setTimeout(r, 800));
             }
 
             battleState.isProcessing = false;
-
-            // 死に出し（強制交代）が必要かチェック
             checkForcedSwitch();
         });
 

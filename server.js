@@ -126,32 +126,6 @@ io.on('connection', (socket) => {
         if (role === 1) room.p1Action = action;
         else room.p2Action = action;
 
-        const p1Active = room.p1Party[room.p1ActiveIdx];
-        const p2Active = room.p2Party[room.p2ActiveIdx];
-
-        // 死に出し（交代のみ）が必要なケースか判定
-        const p1NeedsSwitch = p1Active.isFainted;
-        const p2NeedsSwitch = p2Active.isFainted;
-
-        if (action.type === 'switch' && !room.isResolving) {
-            if (role === 1) {
-                room.p1ActiveIdx = action.index;
-            } else {
-                room.p2ActiveIdx = action.index;
-            }
-            const activeChar = (role === 1 ? room.p1Party : room.p2Party)[action.index];
-            io.to(roomId).emit('forced_switch_reveal', { 
-                role, 
-                index: action.index, 
-                activeChar: activeChar 
-            });
-            
-            // アクションをリセットして次のターンの入力を待つ
-            if (role === 1) room.p1Action = null;
-            else room.p2Action = null;
-            return; 
-        }
-
         // 双方が必要な入力を終えたかチェック
         if (room.p1Action && room.p2Action) {
             const outcomes = [];
@@ -175,10 +149,11 @@ io.on('connection', (socket) => {
 
                 if (attacker.isFainted) continue;
 
+                // server.js ターン解決部分
                 if (a.act.type === 'move') {
                     const move = a.act.move;
 
-                    // 1. 回復処理の実装
+                    // 回復処理
                     if (move.effect && move.effect.type === 'heal') {
                         const healAmt = Math.floor(attacker.maxHp * move.effect.value);
                         attacker.currentHp = Math.min(attacker.maxHp, attacker.currentHp + healAmt);
@@ -187,31 +162,34 @@ io.on('connection', (socket) => {
                         });
                     }
 
-                    // 2. バフ・デバフ処理の実装（耐性への干渉）
+                    // バフ・デバフ処理 (耐性変化)
                     if (move.effect && (move.effect.type === 'buff' || move.effect.type === 'debuff')) {
+                        // 原則：buffなら自分(attacker)、debuffなら相手(target)
                         const isBuff = move.effect.type === 'buff';
-                        const targetChar = move.effect.target === 'self' ? attacker : target;
-                        const effectSide = (move.effect.target === 'self' ? attackerSide : targetSide);
+                        const targetChar = isBuff ? attacker : target;
+                        const targetRole = isBuff ? attackerSide : targetSide;
 
                         if (move.effect.stat === 'def') {
-                            // 防御バフ/デバフは「その技の属性の耐性」を変化させる
-                            // 例: バフなら 0.5倍(ダメージ半減)、デバフなら 1.5倍(ダメージ増加)
                             const resType = move.res_type;
                             if (!targetChar.resistances[resType]) targetChar.resistances[resType] = 1.0;
 
+                            // 耐性値を更新
                             targetChar.resistances[resType] *= move.effect.value;
 
                             outcomes.push({
-                                type: 'stat_change', p: attackerSide, moveName: move.name,
-                                targetP: effectSide, stat: 'resistance', resType, newValue: targetChar.resistances[resType]
+                                type: 'stat_change',
+                                p: attackerSide,
+                                moveName: move.name,
+                                targetP: targetRole,
+                                stat: 'resistance',
+                                resType: resType,
+                                newValue: targetChar.resistances[resType],
+                                isBuff: isBuff
                             });
-                        } else if (move.effect.stat === 'atk') {
-                            targetChar.battleAtk *= move.effect.value;
-                            outcomes.push({ type: 'stat_change', p: attackerSide, moveName: move.name, targetP: effectSide, stat: 'atk' });
                         }
                     }
 
-                    // 3. ダメージ計算（バグ修正：耐性値をダメージ計算に確実に反映）
+                    // ダメージ計算 (修正された耐性を参照)
                     if (move.power > 0) {
                         const resMult = target.resistances[move.res_type] || 1.0;
                         const damage = Math.floor((move.power * (attacker.battleAtk / 100)) * (1 / resMult));
@@ -220,7 +198,7 @@ io.on('connection', (socket) => {
                         if (target.currentHp <= 0) target.isFainted = true;
 
                         outcomes.push({
-                            type: 'move', p: attackerSide, moveName: move.name, damage, resMult,
+                            type: 'move', p: attackerSide, moveName: move.name, damage,
                             targetP: targetSide, targetHp: target.currentHp, targetFainted: target.isFainted
                         });
                     }
