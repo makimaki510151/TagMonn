@@ -126,32 +126,41 @@ io.on('connection', (socket) => {
         if (role === 1) room.p1Action = action;
         else room.p2Action = action;
 
-        // どちらかが倒れている状態での「死に出し」の同期
-        const p1Fainted = room.p1Party[room.p1ActiveIdx].isFainted;
-        const p2Fainted = room.p2Party[room.p2ActiveIdx].isFainted;
+        const p1Active = room.p1Party[room.p1ActiveIdx];
+        const p2Active = room.p2Party[room.p2ActiveIdx];
 
-        // 通常ターン（両者生存）または死に出し（交代先が決定したか）の判定
+        // 死に出し（交代のみ）が必要なケースか判定
+        const p1NeedsSwitch = p1Active.isFainted;
+        const p2NeedsSwitch = p2Active.isFainted;
+
+        // 双方が必要な入力を終えたかチェック
         if (room.p1Action && room.p2Action) {
             const outcomes = [];
-            
-            // 死に出し（交代のみ）の場合の処理
-            if (p1Fainted || p2Fainted) {
-                if (room.p1Action.type === 'switch') room.p1ActiveIdx = room.p1Action.index;
-                if (room.p2Action.type === 'switch') room.p2ActiveIdx = room.p2Action.index;
+
+            if (p1NeedsSwitch || p2NeedsSwitch) {
+                // 死に出し解決フェーズ
+                if (p1NeedsSwitch && room.p1Action.type === 'switch') {
+                    room.p1ActiveIdx = room.p1Action.index;
+                }
+                if (p2NeedsSwitch && room.p2Action.type === 'switch') {
+                    room.p2ActiveIdx = room.p2Action.index;
+                }
 
                 const c1 = room.p1Party[room.p1ActiveIdx];
                 const c2 = room.p2Party[room.p2ActiveIdx];
 
-                outcomes.push({ type: 'switch_sync', 
-                    p1Idx: room.p1ActiveIdx, p1Char: c1,
-                    p2Idx: room.p2ActiveIdx, p2Char: c2 
+                outcomes.push({
+                    type: 'switch_sync',
+                    p1Idx: room.p1ActiveIdx, p1Char: { name: c1.name, baseStats: c1.baseStats, resistances: c1.resistances, currentHp: c1.currentHp, maxHp: c1.maxHp },
+                    p2Idx: room.p2ActiveIdx, p2Char: { name: c2.name, baseStats: c2.baseStats, resistances: c2.resistances, currentHp: c2.currentHp, maxHp: c2.maxHp }
                 });
             } else {
-                // 通常ターンのダメージ計算
+                // 通常ターン解決フェーズ
                 let acts = [
-                    { p: 1, act: room.p1Action, char: room.p1Party[room.p1ActiveIdx] },
-                    { p: 2, act: room.p2Action, char: room.p2Party[room.p2ActiveIdx] }
+                    { p: 1, act: room.p1Action, char: p1Active },
+                    { p: 2, act: room.p2Action, char: p2Active }
                 ];
+
                 acts.sort((a, b) => {
                     const priA = (a.act.type === 'switch' ? 1000 : (a.act.move?.priority || 0) * 100) + a.char.battleSpd;
                     const priB = (b.act.type === 'switch' ? 1000 : (b.act.move?.priority || 0) * 100) + b.char.battleSpd;
@@ -160,11 +169,15 @@ io.on('connection', (socket) => {
 
                 for (let a of acts) {
                     if (a.char.isFainted) continue;
+
                     if (a.act.type === 'switch') {
                         if (a.p === 1) room.p1ActiveIdx = a.act.index;
                         else room.p2ActiveIdx = a.act.index;
                         const nC = (a.p === 1 ? room.p1Party : room.p2Party)[a.act.index];
-                        outcomes.push({ type: 'switch', p: a.p, index: a.act.index, charDetails: nC });
+                        outcomes.push({
+                            type: 'switch', p: a.p, index: a.act.index,
+                            charDetails: { name: nC.name, baseStats: nC.baseStats, resistances: nC.resistances, currentHp: nC.currentHp, maxHp: nC.maxHp }
+                        });
                     } else {
                         const targetSide = a.p === 1 ? 2 : 1;
                         const target = (targetSide === 1 ? room.p1Party : room.p2Party)[targetSide === 1 ? room.p1ActiveIdx : room.p2ActiveIdx];
@@ -175,14 +188,10 @@ io.on('connection', (socket) => {
                         target.currentHp = Math.max(0, target.currentHp - damage);
                         if (target.currentHp <= 0) target.isFainted = true;
 
-                        const outcome = { type: 'move', p: a.p, moveName: move.name, damage, resMult, targetP: targetSide, targetHp: target.currentHp, targetFainted: target.isFainted, effects: [] };
-                        if (move.effect && Math.random() < (move.effect.chance || 1.0)) {
-                            const eff = move.effect;
-                            if (eff.type === 'buff') { a.char[`battle${eff.stat.charAt(0).toUpperCase() + eff.stat.slice(1)}`] *= eff.value; outcome.effects.push({ type: 'buff', stat: eff.stat, userP: a.p }); }
-                            else if (eff.type === 'debuff') { target[`battle${eff.stat.charAt(0).toUpperCase() + eff.stat.slice(1)}`] *= eff.value; outcome.effects.push({ type: 'debuff', stat: eff.stat, targetP: targetSide }); }
-                            else if (eff.type === 'heal') { a.char.currentHp = Math.min(a.char.maxHp, a.char.currentHp + Math.floor(a.char.maxHp * eff.value)); outcome.effects.push({ type: 'heal', userP: a.p, userHp: a.char.currentHp }); }
-                        }
-                        outcomes.push(outcome);
+                        outcomes.push({
+                            type: 'move', p: a.p, moveName: move.name, damage, resMult,
+                            targetP: targetSide, targetHp: target.currentHp, targetFainted: target.isFainted
+                        });
                         if (target.isFainted) break;
                     }
                 }

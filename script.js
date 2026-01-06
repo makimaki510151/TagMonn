@@ -13,16 +13,17 @@ let battleState = {
     p1NextAction: null, p2NextAction: null,
     isProcessing: false,
     isSelectingInitial: false,
-    isForcedSwitch: null
+    isForcedSwitch: null // 1 or 2
 };
 
+// オンライン用変数
 const DEFAULT_SERVER_URL = "https://makkili.a.pinggy.link";
 let socket = null;
 let onlineState = {
     id: null,
     name: "",
     roomId: null,
-    role: null,
+    role: null, // 1 or 2
     partyLimit: 3,
     opponentName: "",
     isOnlineBattle: false
@@ -42,8 +43,10 @@ async function checkServerStatus() {
     const lamp = document.getElementById('status-lamp');
     const text = document.getElementById('status-text');
     if (!lamp || !text) return;
+
     try {
-        await fetch(`${DEFAULT_SERVER_URL}/socket.io/?EIO=4&transport=polling`, { mode: 'no-cors' });
+        // サーバーが生きているか簡易チェック (Socket.ioのパスを確認)
+        const res = await fetch(`${DEFAULT_SERVER_URL}/socket.io/?EIO=4&transport=polling`, { mode: 'no-cors' });
         lamp.style.background = 'var(--success)';
         text.textContent = 'サーバー稼働中';
     } catch (e) {
@@ -53,11 +56,19 @@ async function checkServerStatus() {
 }
 
 function showBattleModeSelect() {
+    // showSection('battle') を先に呼び出し、その後の個別表示制御で上書きされないようにする
+    // ただし showSection 内で showBattleModeSelect を呼んでいるため、フラグで制御
+    if (window._isShowingBattleMode) return;
+    window._isShowingBattleMode = true;
+    
     showSection('battle');
+    
     document.getElementById('battle-mode-select').classList.remove('hidden');
     document.getElementById('battle-setup').classList.add('hidden');
     document.getElementById('battle-field').classList.add('hidden');
     document.getElementById('online-section').classList.add('hidden');
+    
+    window._isShowingBattleMode = false;
 }
 
 function showBattleSetup(mode) {
@@ -66,13 +77,28 @@ function showBattleSetup(mode) {
         document.getElementById('battle-setup').classList.remove('hidden');
         renderBattleSetup();
     } else {
+        // オンライン対戦の場合、battle-sectionを表示したまま、その中の要素を制御
         document.getElementById('battle-section').classList.remove('hidden');
         document.getElementById('online-section').classList.remove('hidden');
+        
+        // オンラインセクション内の初期表示をリセット
         document.getElementById('online-login').classList.remove('hidden');
         document.getElementById('online-lobby').classList.add('hidden');
         document.getElementById('online-regulation').classList.add('hidden');
         document.getElementById('online-party-select').classList.add('hidden');
+        
+        checkServerStatus();
     }
+}
+
+function disconnectOnline() {
+    if (socket) {
+        socket.disconnect();
+        socket = null;
+    }
+    document.getElementById('online-lobby').classList.add('hidden');
+    document.getElementById('online-login').classList.remove('hidden');
+    addOnlineLog("サーバーから切断しました。");
 }
 
 async function loadData() {
@@ -80,24 +106,43 @@ async function loadData() {
         const res = await fetch('data.json');
         gameData = await res.json();
         return true;
-    } catch (e) { return false; }
+    } catch (e) {
+        console.error("データ読み込み失敗", e);
+        return false;
+    }
 }
 
 function initPresets() {
     if (myChars.length === 0) {
         const presets = [
-            { name: "ファイアドラゴン", tags: [103, 113, 116], moves: [1031, 1131, 1162, 1161], id: 1 },
-            { name: "アクアナイト", tags: [104, 108, 120], moves: [1041, 1042, 1201, 1081], id: 2 }
+            { name: "ファイアドラゴン", tags: [103, 113, 116], moves: [1031, 1131, 1162, 1], id: 1 },
+            { name: "アクアナイト", tags: [104, 108, 120], moves: [1041, 1042, 1201, 1], id: 2 },
+            { name: "サンダーバード", tags: [105, 110, 117], moves: [1051, 1101, 1171, 3], id: 3 },
+            { name: "ダークウィザード", tags: [101, 118, 121], moves: [1011, 1181, 1211, 2], id: 4 },
+            { name: "アイアンゴーレム", tags: [106, 111, 108], moves: [1061, 1111, 1081, 1], id: 5 },
+            { name: "ホーリーエルフ", tags: [102, 109, 118], moves: [1021, 1022, 1091, 2], id: 6 }
         ];
         presets.forEach(p => {
             const tags = p.tags.map(tid => gameData.tags.find(t => t.id === tid));
             const moves = p.moves.map(mid => gameData.moves.find(m => m.id === mid));
-            myChars.push({ id: p.id, name: p.name, tags, moves, baseStats: calculateStats(tags), resistances: calculateResistances(tags) });
+            myChars.push({
+                id: p.id, name: p.name, tags, moves,
+                baseStats: calculateStats(tags),
+                resistances: calculateResistances(tags)
+            });
         });
         localStorage.setItem('tm_chars', JSON.stringify(myChars));
     }
+
     if (myParties.length === 0) {
-        myParties.push({ id: 1001, name: "サンプル", members: [myChars[0], myChars[1]] });
+        myParties.push({
+            id: 1001, name: "【初心者用】バランスパーティ",
+            members: [myChars[0], myChars[1], myChars[2]]
+        });
+        myParties.push({
+            id: 1002, name: "【初心者用】テクニカルパーティ",
+            members: [myChars[3], myChars[4], myChars[5]]
+        });
         localStorage.setItem('tm_parties', JSON.stringify(myParties));
     }
 }
@@ -111,12 +156,25 @@ function setupEventListeners() {
 function showSection(id) {
     document.querySelectorAll('.panel').forEach(p => p.classList.add('hidden'));
     document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+
     const target = document.getElementById(`${id}-section`);
-    if (target) target.classList.remove('hidden');
     const navBtn = document.querySelector(`nav button[onclick*="'${id}'"]`);
+
+    if (target) target.classList.remove('hidden');
     if (navBtn) navBtn.classList.add('active');
+
     if (id === 'build') renderBuildScreen();
     if (id === 'party') renderPartyScreen();
+    if (id === 'battle') {
+        // 対戦タブが押された時は、対戦中・準備中・オンラインロビー中ならそのまま、そうでなければモード選択を表示
+        const isBattleFieldVisible = !document.getElementById('battle-field').classList.contains('hidden');
+        const isBattleSetupVisible = !document.getElementById('battle-setup').classList.contains('hidden');
+        const isOnlineSectionVisible = !document.getElementById('online-section').classList.contains('hidden');
+        
+        if (!battleState.isProcessing && !isBattleFieldVisible && !isBattleSetupVisible && !isOnlineSectionVisible) {
+            showBattleModeSelect();
+        }
+    }
 }
 
 function getResName(id) {
@@ -128,51 +186,104 @@ function showDetail(item, type) {
     const detailBox = document.getElementById('detail-display');
     if (!detailBox) return;
     let html = `<strong>${item.name}</strong><br>`;
-    if (type === 'tag') html += `HP:${item.hp} / ATK:${item.atk} / SPD:${item.spd || 0}<br><small>${item.description}</small>`;
-    else if (type === 'move') html += `[${getResName(item.res_type)}] 威力:${item.power} 命中:${item.accuracy}<br><small>${item.description}</small>`;
+    if (type === 'tag') {
+        html += `HP:${item.hp} / ATK:${item.atk} / SPD:${item.spd || 0}<br>`;
+        html += `<small>${item.description}</small>`;
+    } else if (type === 'move') {
+        const resName = getResName(item.res_type);
+        html += `[${resName}] 威力:${item.power} 命中:${item.accuracy}<br>`;
+        html += `<small>${item.description}</small>`;
+    }
     detailBox.innerHTML = html;
 }
 
+function renderBuildScreen() {
+    renderTags();
+    updateBuildPreview();
+    renderSavedChars();
+}
+
+function renderTags() {
+    const container = document.getElementById('tag-container');
+    if (!container) return;
+    container.innerHTML = '';
+    gameData.tags.forEach(tag => {
+        const btn = document.createElement('button');
+        const isActive = currentBuild.tags.some(t => t.id === tag.id);
+        btn.className = `tag-btn ${isActive ? 'active' : ''}`;
+        btn.textContent = tag.name;
+        btn.onmouseover = () => showDetail(tag, 'tag');
+        btn.onclick = () => {
+            const idx = currentBuild.tags.findIndex(t => t.id === tag.id);
+            if (idx > -1) currentBuild.tags.splice(idx, 1);
+            else if (currentBuild.tags.length < 6) currentBuild.tags.push(tag);
+
+            currentBuild.moves = currentBuild.moves.filter(move =>
+                (move.required_tags || []).every(reqId => currentBuild.tags.some(t => t.id === reqId))
+            );
+            renderBuildScreen();
+        };
+        container.appendChild(btn);
+    });
+}
+
 function calculateStats(tags) {
-    let hp = 150, atk = 80, spd = 80;
-    tags.forEach(t => { hp += t.hp * 0.5; atk += t.atk * 0.3; spd += (t.spd || 0) * 0.3; });
-    return { hp: Math.floor(hp), atk: Math.floor(atk), spd: Math.floor(spd) };
+    let baseHp = 150, baseAtk = 80, baseSpd = 80;
+    let modHp = 0, modAtk = 0, modSpd = 0;
+    tags.forEach(t => {
+        modHp += t.hp * 0.5;
+        modAtk += t.atk * 0.3;
+        modSpd += (t.spd || 0) * 0.3;
+    });
+    return {
+        hp: Math.floor(baseHp + modHp),
+        atk: Math.floor(baseAtk + modAtk),
+        spd: Math.floor(baseSpd + modSpd)
+    };
 }
 
 function calculateResistances(tags) {
     let res = { 1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0 };
     tags.forEach(t => {
+        if (t.name === "悪性") { res[3] *= 1.5; res[4] *= 0.7; }
+        if (t.name === "善性") { res[4] *= 1.5; res[3] *= 0.7; }
+        if (t.name === "火精" || t.name === "水精" || t.name === "雷精" || t.name === "風精") { res[2] *= 0.8; }
+        if (t.name === "地精") { res[1] *= 0.8; res[2] *= 1.2; }
+        if (t.name === "機械") { res[1] *= 0.7; res[2] *= 1.3; }
+        if (t.name === "生体") { res[3] *= 0.8; res[4] *= 1.2; }
+        if (t.name === "飛翔") { res[1] *= 1.2; res[2] *= 0.8; }
+        if (t.name === "重厚") { res[1] *= 0.6; res[4] *= 1.4; }
+        if (t.name === "電脳") { res[3] *= 0.7; res[2] *= 1.3; }
+        if (t.name === "古龍") { res[2] *= 0.6; res[4] *= 1.2; }
+        if (t.name === "不死") { res[4] *= 0.5; res[3] *= 1.5; }
+        if (t.name === "虚空") { res[1] *= 0.5; res[3] *= 1.5; }
+        if (t.name === "剛腕") { res[1] *= 0.9; }
+        if (t.name === "俊足") { res[2] *= 0.9; }
+        if (t.name === "知性") { res[3] *= 0.9; }
+        if (t.name === "毒性") { res[4] *= 0.8; }
         if (t.name === "硬質") { res[1] *= 0.9; res[2] *= 0.9; res[3] *= 0.9; res[4] *= 0.9; }
+        if (t.name === "幻影") { res[3] *= 0.8; res[1] *= 1.2; }
+        if (t.name === "磁力") { res[4] *= 0.9; res[1] *= 1.1; }
+        if (t.name === "音響") { res[2] *= 0.9; res[4] *= 1.1; }
     });
     return res;
 }
 
-function renderBuildScreen() {
-    const container = document.getElementById('tag-container');
-    container.innerHTML = '';
-    gameData.tags.forEach(tag => {
-        const btn = document.createElement('button');
-        btn.className = `tag-btn ${currentBuild.tags.some(t => t.id === tag.id) ? 'active' : ''}`;
-        btn.textContent = tag.name;
-        btn.onclick = () => {
-            const idx = currentBuild.tags.findIndex(t => t.id === tag.id);
-            if (idx > -1) currentBuild.tags.splice(idx, 1);
-            else if (currentBuild.tags.length < 6) currentBuild.tags.push(tag);
-            renderBuildScreen();
-        };
-        container.appendChild(btn);
-    });
-    updateBuildPreview();
-}
-
 function updateBuildPreview() {
     const moveCont = document.getElementById('move-candidate-container');
+    if (!moveCont) return;
     moveCont.innerHTML = '';
-    const available = gameData.moves.filter(m => (m.required_tags || []).every(reqId => currentBuild.tags.some(t => t.id === reqId)));
+
+    const available = gameData.moves.filter(m =>
+        (m.required_tags || []).every(reqId => currentBuild.tags.some(t => t.id === reqId))
+    );
+
     available.forEach(move => {
         const btn = document.createElement('button');
-        btn.className = `tag-btn ${currentBuild.moves.some(m => m.id === move.id) ? 'active' : ''}`;
+        const isSelected = currentBuild.moves.some(m => m.id === move.id);
+        btn.className = `tag-btn ${isSelected ? 'active' : ''}`;
         btn.textContent = move.name;
+        btn.onmouseover = () => showDetail(move, 'move');
         btn.onclick = () => {
             const idx = currentBuild.moves.findIndex(m => m.id === move.id);
             if (idx > -1) currentBuild.moves.splice(idx, 1);
@@ -181,247 +292,932 @@ function updateBuildPreview() {
         };
         moveCont.appendChild(btn);
     });
+
     const stats = calculateStats(currentBuild.tags);
-    document.getElementById('stat-preview').innerHTML = `HP: ${stats.hp} ATK: ${stats.atk} SPD: ${stats.spd}`;
+    const res = calculateResistances(currentBuild.tags);
+
+    const statPreview = document.getElementById('stat-preview');
+    let resHtml = '<div class="resistance-grid" style="margin-top:15px;">';
+    Object.entries(res).forEach(([id, val]) => {
+        const name = getResName(parseInt(id));
+        let cls = '';
+        if (val < 1.0) cls = 'res-resist';
+        else if (val > 1.0) cls = 'res-weak';
+        resHtml += `<div class="res-item ${cls}">${name}: ${Math.round(val * 100)}%</div>`;
+    });
+    resHtml += '</div>';
+
+    statPreview.innerHTML = `
+        <div class="stat-row"><span class="stat-label">HP</span><span class="stat-value">${stats.hp}</span></div>
+        <div class="stat-row"><span class="stat-label">ATK</span><span class="stat-value">${stats.atk}</span></div>
+        <div class="stat-row"><span class="stat-label">SPD</span><span class="stat-value">${stats.spd}</span></div>
+        <div style="margin-top:10px; font-size:0.8rem; color:${currentBuild.tags.length < 3 ? 'var(--danger)' : 'var(--text-muted)'};">
+            タグ数: ${currentBuild.tags.length}/6 (3つ以上必須)
+        </div>
+        <div style="font-size:0.8rem; color:var(--text-muted);">技スロット: ${currentBuild.moves.length}/4</div>
+        ${resHtml}
+    `;
+
+    const saveBtn = document.getElementById('save-char-btn');
+    saveBtn.textContent = currentBuild.id ? "キャラクターを更新" : "キャラクターを保存";
 }
 
 function saveCharacter() {
-    const name = document.getElementById('char-name').value;
-    if (!name || currentBuild.tags.length < 3) return alert("不備があります");
-    const char = { ...currentBuild, name, id: currentBuild.id || Date.now(), baseStats: calculateStats(currentBuild.tags), resistances: calculateResistances(currentBuild.tags) };
-    if (currentBuild.id) myChars = myChars.map(c => c.id === char.id ? char : c);
-    else myChars.push(char);
+    const nameInput = document.getElementById('char-name');
+    if (!nameInput.value) return alert("名前を入力してください");
+    if (currentBuild.tags.length < 3) return alert("タグを3つ以上選択してください");
+
+    const stats = calculateStats(currentBuild.tags);
+    const res = calculateResistances(currentBuild.tags);
+
+    const charData = {
+        ...JSON.parse(JSON.stringify(currentBuild)),
+        name: nameInput.value,
+        baseStats: stats,
+        resistances: res
+    };
+
+    if (currentBuild.id) {
+        const idx = myChars.findIndex(c => c.id === currentBuild.id);
+        myChars[idx] = charData;
+    } else {
+        charData.id = Date.now();
+        myChars.push(charData);
+    }
+
     localStorage.setItem('tm_chars', JSON.stringify(myChars));
-    location.reload();
+    resetBuild();
+    renderBuildScreen();
+}
+
+function resetBuild() {
+    currentBuild = { id: null, name: "", tags: [], moves: [] };
+    document.getElementById('char-name').value = "";
+}
+
+function editChar(id) {
+    const char = myChars.find(c => c.id === id);
+    if (!char) return;
+    currentBuild = JSON.parse(JSON.stringify(char));
+    document.getElementById('char-name').value = char.name;
+    renderBuildScreen();
+    window.scrollTo(0, 0);
+}
+
+function renderSavedChars() {
+    const list = document.getElementById('saved-chars-list');
+    if (!list) return;
+    list.innerHTML = myChars.map(c => `
+        <div class="mini-list">
+            <span style="font-weight:600; cursor:pointer;" onclick="editChar(${c.id})">${c.name} <small>(編集)</small></span>
+            <button class="del-btn" onclick="deleteChar(${c.id})">×</button>
+        </div>
+    `).join('');
+}
+
+function deleteChar(id) {
+    if (!confirm("キャラを削除しますか？")) return;
+    myChars = myChars.filter(c => c.id !== id);
+    localStorage.setItem('tm_chars', JSON.stringify(myChars));
+    renderSavedChars();
 }
 
 function renderPartyScreen() {
     const cand = document.getElementById('party-char-candidates');
-    cand.innerHTML = myChars.map(c => `<button class="tag-btn" onclick="currentPartyMembers.push(myChars.find(x=>x.id===${c.id})); renderCurrentParty();">${c.name}</button>`).join('');
+    cand.innerHTML = '';
+    myChars.forEach(char => {
+        const btn = document.createElement('button');
+        btn.className = 'tag-btn';
+        btn.textContent = char.name;
+        btn.onclick = () => {
+            if (currentPartyMembers.length < 6) {
+                currentPartyMembers.push(char);
+                renderCurrentParty();
+            }
+        };
+        cand.appendChild(btn);
+    });
     renderCurrentParty();
+    renderSavedParties();
 }
 
 function renderCurrentParty() {
-    document.getElementById('current-party-list').innerHTML = currentPartyMembers.map((m, i) => `<div class="mini-list">${m.name} <button onclick="currentPartyMembers.splice(${i},1); renderCurrentParty();">×</button></div>`).join('');
+    const list = document.getElementById('current-party-list');
+    list.innerHTML = currentPartyMembers.map((m, i) => `
+        <div class="mini-list">
+            <span>${m.name}</span>
+            <button class="del-btn" onclick="currentPartyMembers.splice(${i}, 1); renderCurrentParty();">×</button>
+        </div>
+    `).join('');
+}
+
+function renderSavedParties() {
+    const list = document.getElementById('saved-parties-list');
+    list.innerHTML = myParties.map(p => `
+        <div class="mini-list">
+            <span>${p.name} <small>(${p.members.length}体)</small></span>
+            <button class="del-btn" onclick="deleteParty(${p.id})">×</button>
+        </div>
+    `).join('');
+}
+
+function deleteParty(id) {
+    if (!confirm("パーティを削除しますか？")) return;
+    myParties = myParties.filter(p => p.id !== id);
+    localStorage.setItem('tm_parties', JSON.stringify(myParties));
+    renderSavedParties();
 }
 
 function saveParty() {
     const name = document.getElementById('party-name').value;
-    if (!name || currentPartyMembers.length === 0) return alert("不備があります");
+    if (!name || currentPartyMembers.length === 0) return alert("名前とメンバーが必要です");
     myParties.push({ name, members: [...currentPartyMembers], id: Date.now() });
     localStorage.setItem('tm_parties', JSON.stringify(myParties));
-    location.reload();
+    currentPartyMembers = [];
+    document.getElementById('party-name').value = "";
+    renderPartyScreen();
 }
 
 function renderBattleSetup() {
-    const draw = (pNum) => myParties.map(p => `<button class="tag-btn" onclick="setBattleParty(${pNum}, ${p.id})">${p.name}</button>`).join('');
-    document.getElementById('select-p1-party').innerHTML = draw(1);
-    document.getElementById('select-p2-party').innerHTML = draw(2);
+    const p1div = document.getElementById('select-p1-party');
+    const p2div = document.getElementById('select-p2-party');
+    const draw = (p, pNum) => `<button class="tag-btn ${((pNum === 1 ? selectedP1 : selectedP2)?.id === p.id) ? 'active' : ''}" onclick="setBattleParty(${pNum}, ${p.id})">${p.name}</button>`;
+    p1div.innerHTML = myParties.map(p => draw(p, 1)).join('');
+    p2div.innerHTML = myParties.map(p => draw(p, 2)).join('');
 }
 
-window.setBattleParty = (pNum, id) => {
-    const p = myParties.find(x => x.id === id);
-    if (pNum === 1) selectedP1 = p; else selectedP2 = p;
+window.setBattleParty = (pNum, pId) => {
+    const party = myParties.find(p => p.id == pId);
+    if (pNum === 1) selectedP1 = party;
+    else selectedP2 = party;
+    renderBattleSetup();
 };
 
 function startBattle() {
     if (!selectedP1 || !selectedP2) return alert("パーティを選んでください");
-    onlineState.isOnlineBattle = false;
+
+    onlineState.isOnlineBattle = false; // ローカルバトル
+
     document.getElementById('battle-setup').classList.add('hidden');
     document.getElementById('battle-field').classList.remove('hidden');
-    const init = (m) => ({ ...m, maxHp: m.baseStats.hp, currentHp: m.baseStats.hp, battleSpd: m.baseStats.spd, battleAtk: m.baseStats.atk, isFainted: false });
-    battleState.p1 = selectedP1.members.map(init);
-    battleState.p2 = selectedP2.members.map(init);
+    document.getElementById('online-back-btn').classList.add('hidden'); // ローカルでは戻るボタン非表示
+
+    const initSet = (m) => {
+        return {
+            ...m,
+            maxHp: m.baseStats.hp,
+            currentHp: m.baseStats.hp,
+            battleSpd: m.baseStats.spd,
+            battleAtk: m.baseStats.atk,
+            isFainted: false
+        };
+    };
+    battleState.p1 = selectedP1.members.map(initSet);
+    battleState.p2 = selectedP2.members.map(initSet);
+
+    // 選出フェーズの初期化
+    battleState.p1ActiveIdx = -1;
+    battleState.p2ActiveIdx = -1;
     battleState.isSelectingInitial = true;
+    battleState.isForcedSwitch = null;
+
+    document.getElementById('battle-log').innerHTML = "<div>バトル開始！1体目のキャラを選んでください。</div>";
     updateBattleUI();
 }
 
 function updateBattleUI() {
-    const a1 = battleState.p1[battleState.p1ActiveIdx];
-    const a2 = battleState.p2[battleState.p2ActiveIdx];
-    updateCharDisplay(1, a1);
-    updateCharDisplay(2, a2);
-    
-    const mCont = document.getElementById('move-actions');
-    const sCont = document.getElementById('switch-actions');
-    mCont.innerHTML = ""; sCont.innerHTML = "";
+    const a1 = battleState.p1ActiveIdx !== -1 ? battleState.p1[battleState.p1ActiveIdx] : null;
+    const a2 = battleState.p2ActiveIdx !== -1 ? battleState.p2[battleState.p2ActiveIdx] : null;
 
-    if (battleState.isSelectingInitial || battleState.isForcedSwitch) {
-        renderSelectionPanel(mCont, sCont);
-    } else if (!battleState.isProcessing) {
-        if (onlineState.isOnlineBattle) {
-            const role = onlineState.role;
-            renderActionPanel(role, role === 1 ? a1 : a2, role === 1 ? 'move-actions' : 'switch-actions');
-        } else {
-            renderActionPanel(1, a1, 'move-actions');
-            renderActionPanel(2, a2, 'switch-actions');
-        }
+    // オンラインの場合、相手が確定していない(blind pick中)なら情報は隠す
+    if (onlineState.isOnlineBattle && battleState.isSelectingInitial && a2 === null && onlineState.role === 1) {
+        // P1視点、P2未定
+        updateCharDisplay(1, a1);
+        updateCharDisplay(2, null);
+    } else if (onlineState.isOnlineBattle && battleState.isSelectingInitial && a1 === null && onlineState.role === 2) {
+        // P2視点、P1未定
+        updateCharDisplay(1, null);
+        updateCharDisplay(2, a2);
+    } else {
+        updateCharDisplay(1, a1);
+        updateCharDisplay(2, a2);
+    }
+
+    if (battleState.isSelectingInitial) {
+        renderSelectionPanel();
+    } else if (battleState.isForcedSwitch) {
+        renderSelectionPanel();
+    } else {
+        renderActionPanel(1, a1, 'move-actions');
+        renderActionPanel(2, a2, 'switch-actions');
     }
 }
 
 function updateCharDisplay(pNum, char) {
-    const info = document.getElementById(`p${pNum}-active-info`);
-    const fill = document.getElementById(pNum === 1 ? 'p1-fill' : 'p2-hp-fill');
-    if (!char) { info.innerHTML = "???"; fill.style.width = "0%"; return; }
-    info.innerHTML = `<strong>${char.name}</strong> HP:${Math.floor(char.currentHp)}/${char.maxHp}`;
-    fill.style.width = `${(char.currentHp / char.maxHp) * 100}%`;
+    const prefix = pNum === 1 ? 'p1' : 'p2';
+    const infoEl = document.getElementById(`${prefix}-active-info`);
+    const fillEl = document.getElementById(pNum === 1 ? 'p1-fill' : 'p2-hp-fill');
+
+    if (!char) {
+        infoEl.innerHTML = `<div class="char-name" style="color:var(--text-muted)">? ? ?</div>`;
+        fillEl.style.width = `0%`;
+        return;
+    }
+
+    // オンライン対戦かつ相手のキャラを表示する場合、情報を制限する
+    const isOpponent = onlineState.isOnlineBattle && onlineState.role !== pNum;
+
+    let resHtml = `<div class="resistance-grid ${pNum === 2 ? 'right' : ''}" style="margin-top: 8px;">`;
+    Object.entries(char.resistances).forEach(([id, val]) => {
+        const name = getResName(parseInt(id));
+        let cls = '';
+        if (val < 1.0) cls = 'res-resist';
+        else if (val > 1.0) cls = 'res-weak';
+        resHtml += `<div class="res-item ${cls}" style="font-size:0.65rem;">${name}:${Math.round(val * 100)}%</div>`;
+    });
+    resHtml += '</div>';
+
+    if (isOpponent) {
+        infoEl.innerHTML = `
+            <div class="char-name">${char.name}</div>
+            <div class="char-stats">
+                HP: ${Math.floor(char.currentHp)}/${char.maxHp}
+            </div>
+            ${resHtml}
+        `;
+    } else {
+        infoEl.innerHTML = `
+            <div class="char-name">${char.name}</div>
+            <div class="char-stats">
+                HP: ${Math.floor(char.currentHp)}/${char.maxHp} | ATK: ${Math.floor(char.battleAtk)} | SPD: ${Math.floor(char.battleSpd)}
+            </div>
+            ${resHtml}
+        `;
+    }
+
+    const hpPercent = (char.currentHp / char.maxHp) * 100;
+    fillEl.style.width = `${hpPercent}%`;
+    fillEl.className = 'fill';
+    if (hpPercent < 20) fillEl.classList.add('danger');
+    else if (hpPercent < 50) fillEl.classList.add('warning');
 }
 
-function renderSelectionPanel(mCont, sCont) {
-    const pNum = battleState.isSelectingInitial ? (battleState.p1ActiveIdx === -1 ? 1 : 2) : battleState.isForcedSwitch;
-    const targetCont = (onlineState.isOnlineBattle ? (onlineState.role === 1 ? mCont : sCont) : (pNum === 1 ? mCont : sCont));
-    
-    if (onlineState.isOnlineBattle && pNum !== onlineState.role) {
-        targetCont.innerHTML = "相手の選択待ち..."; return;
+function renderSelectionPanel() {
+    const moveCont = document.getElementById('move-actions');
+    const switchCont = document.getElementById('switch-actions');
+
+    // 表示のリセット
+    moveCont.innerHTML = "";
+    switchCont.innerHTML = "";
+
+    // オンラインの場合、自分のパネルのみ表示
+    if (onlineState.isOnlineBattle) {
+        if (onlineState.role === 1) renderOnlineSelection(1, moveCont);
+        else renderOnlineSelection(2, switchCont); // P2は右側に表示
+        return;
     }
-    
-    targetCont.innerHTML = `<h4>P${pNum} キャラ選択</h4>`;
+
+    // 以下ローカル用ロジック
+    let pNum = 1;
+    if (battleState.isSelectingInitial) {
+        pNum = battleState.p1ActiveIdx === -1 ? 1 : 2;
+    } else {
+        pNum = battleState.isForcedSwitch;
+    }
+
+    const container = pNum === 1 ? moveCont : switchCont;
+    container.innerHTML = `<h4>Player ${pNum} 出すキャラを選択</h4><div class="action-grid"></div>`;
+    const grid = container.querySelector('.action-grid');
+    generateSelectionButtons(pNum, grid);
+}
+
+function renderOnlineSelection(pNum, container) {
+    // 交代が必要なのは自分か？
+    let isMyTurnToSelect = false;
+    if (battleState.isSelectingInitial) {
+        isMyTurnToSelect = (pNum === 1 && battleState.p1ActiveIdx === -1) || (pNum === 2 && battleState.p2ActiveIdx === -1);
+    } else {
+        isMyTurnToSelect = battleState.isForcedSwitch === pNum;
+    }
+
+    if (isMyTurnToSelect) {
+        container.innerHTML = `<h4>あなたの選出</h4><div class="action-grid"></div>`;
+        const grid = container.querySelector('.action-grid');
+        generateSelectionButtons(pNum, grid);
+    } else {
+        container.innerHTML = `<h4>相手の選出待ち...</h4>`;
+    }
+}
+
+function generateSelectionButtons(pNum, grid) {
     const party = pNum === 1 ? battleState.p1 : battleState.p2;
-    party.forEach((c, i) => {
+    party.forEach((c, idx) => {
         if (!c.isFainted) {
             const btn = document.createElement('button');
-            btn.className = 'action-btn'; btn.textContent = c.name;
-            btn.onclick = () => selectCharacter(pNum, i);
-            targetCont.appendChild(btn);
+            btn.className = 'action-btn';
+            btn.style.textAlign = 'left';
+            btn.style.height = 'auto';
+
+            let resSummary = '';
+            Object.entries(c.resistances).forEach(([id, val]) => {
+                if (val !== 1.0) {
+                    const name = getResName(parseInt(id)).charAt(0);
+                    resSummary += `<span style="color:${val < 1.0 ? 'var(--success)' : 'var(--danger)'}; margin-right:4px;">${name}${Math.round(val * 100)}</span>`;
+                }
+            });
+
+            btn.innerHTML = `
+                <div style="font-weight:bold; font-size:0.8rem;">${c.name}</div>
+                <div style="font-size:0.7rem; color:var(--text-muted);">H:${Math.floor(c.currentHp)} A:${c.battleAtk} S:${c.battleSpd}</div>
+                <div style="font-size:0.6rem; margin-top:2px;">${resSummary}</div>
+            `;
+
+            btn.onclick = () => selectCharacter(pNum, idx);
+            grid.appendChild(btn);
         }
     });
 }
 
 function selectCharacter(pNum, idx) {
+    const party = pNum === 1 ? battleState.p1 : battleState.p2;
+
     if (onlineState.isOnlineBattle) {
-        const type = battleState.isSelectingInitial ? 'submit_initial_pick' : 'submit_action';
-        const action = battleState.isSelectingInitial ? idx : { type: 'switch', index: idx };
-        socket.emit(type, { roomId: onlineState.roomId, role: onlineState.role, index: idx, action });
-        document.getElementById('waiting-overlay').classList.remove('hidden');
-    } else {
+        // オンライン: サーバーに選択を送信
         if (battleState.isSelectingInitial) {
-            if (pNum === 1) battleState.p1ActiveIdx = idx; else { battleState.p2ActiveIdx = idx; battleState.isSelectingInitial = false; }
-        } else {
-            if (pNum === 1) battleState.p1ActiveIdx = idx; else battleState.p2ActiveIdx = idx;
-            battleState.isForcedSwitch = null;
+            socket.emit('submit_initial_pick', { roomId: onlineState.roomId, role: onlineState.role, index: idx });
+            document.getElementById('waiting-overlay').classList.remove('hidden');
+            // 一時的に自分のステートには反映せず、サーバーのrevealイベントを待つ
+        } else if (battleState.isForcedSwitch) {
+            // 強制交代時
+            socket.emit('submit_action', { roomId: onlineState.roomId, role: onlineState.role, action: { type: 'switch', index: idx } });
+            document.getElementById('waiting-overlay').classList.remove('hidden');
         }
-        updateBattleUI();
+        return;
     }
+
+    // ローカル処理
+    if (battleState.isSelectingInitial) {
+        if (pNum === 1) battleState.p1ActiveIdx = idx;
+        else {
+            battleState.p2ActiveIdx = idx;
+            battleState.isSelectingInitial = false;
+        }
+        log(`P${pNum}: ${party[idx].name}を繰り出した！`);
+    } else if (battleState.isForcedSwitch) {
+        if (pNum === 1) battleState.p1ActiveIdx = idx;
+        else battleState.p2ActiveIdx = idx;
+
+        log(`P${pNum}: 交代して ${party[idx].name}を繰り出した！`);
+        battleState.isForcedSwitch = null;
+    }
+
+    updateBattleUI();
 }
 
-function renderActionPanel(pNum, char, contId) {
-    const cont = document.getElementById(contId);
-    cont.innerHTML = `<h4>P${pNum} 行動選択</h4>`;
+function renderActionPanel(pNum, char, containerId) {
+    const cont = document.getElementById(containerId);
+
+    // オンラインの場合、自分以外のコントロールは非表示
+    if (onlineState.isOnlineBattle) {
+        if (onlineState.role !== pNum) {
+            cont.innerHTML = ``;
+            return;
+        }
+        cont.innerHTML = `<h4>あなた(${pNum}) の選択</h4><div class="action-grid"></div>`;
+    } else {
+        cont.innerHTML = `<h4>Player ${pNum} の選択</h4><div class="action-grid"></div>`;
+    }
+
+    const grid = cont.querySelector('.action-grid');
+
+    if (battleState.isProcessing || battleState.isForcedSwitch) return;
+
+    // 既にアクション選択済みなら待機表示（オンライン用）
+    if (onlineState.isOnlineBattle) {
+        if (onlineState.role === 1 && battleState.p1NextAction) {
+            grid.innerHTML = "<div>行動選択済み。待機中...</div>";
+            return;
+        }
+        if (onlineState.role === 2 && battleState.p2NextAction) {
+            grid.innerHTML = "<div>行動選択済み。待機中...</div>";
+            return;
+        }
+    }
+
     char.moves.forEach(m => {
         const btn = document.createElement('button');
-        btn.className = 'action-btn'; btn.textContent = m.name;
-        btn.onclick = () => handleAction(pNum, { type: 'move', move: m });
-        cont.appendChild(btn);
+        btn.textContent = m.name;
+        btn.onmouseover = () => showDetail(m, 'move');
+        btn.className = 'action-btn';
+        if ((pNum === 1 ? battleState.p1NextAction : battleState.p2NextAction)?.move?.id === m.id) {
+            btn.classList.add('active');
+        }
+        btn.onclick = () => {
+            handleAction(pNum, { type: 'move', move: m });
+        };
+        grid.appendChild(btn);
+    });
+
+    const party = pNum === 1 ? battleState.p1 : battleState.p2;
+    party.forEach((c, idx) => {
+        if (idx !== (pNum === 1 ? battleState.p1ActiveIdx : battleState.p2ActiveIdx) && !c.isFainted) {
+            const btn = document.createElement('button');
+            btn.className = 'action-btn switch';
+            btn.style.textAlign = 'left';
+            btn.style.height = 'auto';
+            btn.style.padding = '8px';
+
+            let resSummary = '';
+            Object.entries(c.resistances).forEach(([id, val]) => {
+                if (val !== 1.0) {
+                    const name = getResName(parseInt(id)).charAt(0);
+                    resSummary += `<span style="color:${val < 1.0 ? 'var(--success)' : 'var(--danger)'}; margin-right:4px;">${name}${Math.round(val * 100)}</span>`;
+                }
+            });
+
+            btn.innerHTML = `
+                <div style="font-weight:bold; font-size:0.8rem;">交代:${c.name}</div>
+                <div style="font-size:0.7rem; color:var(--text-muted);">H:${Math.floor(c.currentHp)} A:${c.battleAtk} S:${c.battleSpd}</div>
+                <div style="font-size:0.6rem; margin-top:2px;">${resSummary}</div>
+            `;
+
+            btn.onclick = () => {
+                handleAction(pNum, { type: 'switch', index: idx });
+            };
+            grid.appendChild(btn);
+        }
     });
 }
 
 function handleAction(pNum, action) {
     if (onlineState.isOnlineBattle) {
+        // サーバーへ送信
         socket.emit('submit_action', { roomId: onlineState.roomId, role: onlineState.role, action });
+        // 自分のアクションだけ仮セットしてUIロック
+        if (pNum === 1) battleState.p1NextAction = action;
+        else battleState.p2NextAction = action;
+
         document.getElementById('waiting-overlay').classList.remove('hidden');
+        renderActionPanel(pNum, (pNum === 1 ? battleState.p1[battleState.p1ActiveIdx] : battleState.p2[battleState.p2ActiveIdx]), pNum === 1 ? 'move-actions' : 'switch-actions');
     } else {
-        if (pNum === 1) battleState.p1NextAction = action; else battleState.p2NextAction = action;
-        if (battleState.p1NextAction && battleState.p2NextAction) localProcess();
+        // ローカル
+        if (pNum === 1) battleState.p1NextAction = action;
+        else battleState.p2NextAction = action;
+        checkTurnReady();
     }
 }
 
-async function onlineProcess(outcomes) {
+function checkTurnReady() {
+    if (battleState.p1NextAction && battleState.p2NextAction) {
+        processTurn();
+    } else {
+        updateBattleUI();
+    }
+}
+
+async function processTurn() {
     battleState.isProcessing = true;
-    document.getElementById('waiting-overlay').classList.add('hidden');
-    for (let o of outcomes) {
-        if (o.type === 'switch_sync') {
-            battleState.p1ActiveIdx = o.p1Idx; battleState.p1[o.p1Idx] = o.p1Char;
-            battleState.p2ActiveIdx = o.p2Idx; battleState.p2[o.p2Idx] = o.p2Char;
-            battleState.isForcedSwitch = null;
-            log("両者のキャラが繰り出された！");
-        } else if (o.type === 'switch') {
-            const p = o.p === 1 ? battleState.p1 : battleState.p2;
-            p[o.index] = o.charDetails;
-            if (o.p === 1) battleState.p1ActiveIdx = o.index; else battleState.p2ActiveIdx = o.index;
-            log(`P${o.p}は交代した！`);
-        } else if (o.type === 'move') {
-            const target = (o.targetP === 1 ? battleState.p1 : battleState.p2)[o.targetP === 1 ? battleState.p1ActiveIdx : battleState.p2ActiveIdx];
-            log(`P${o.p}の ${o.moveName}！ ${o.damage}ダメージ！`);
-            target.currentHp = o.targetHp; target.isFainted = o.targetFainted;
-            if (target.isFainted) {
+    updateBattleUI();
+    document.getElementById('waiting-overlay').classList.add('hidden'); // アニメーション中は待機解除
+
+    let acts = [
+        { p: 1, act: battleState.p1NextAction, char: battleState.p1[battleState.p1ActiveIdx] },
+        { p: 2, act: battleState.p2NextAction, char: battleState.p2[battleState.p2ActiveIdx] }
+    ];
+
+    acts.sort((a, b) => {
+        const priA = (a.act.type === 'switch' ? 1000 : (a.act.move.priority || 0) * 100) + a.char.battleSpd;
+        const priB = (b.act.type === 'switch' ? 1000 : (b.act.move.priority || 0) * 100) + b.char.battleSpd;
+        return priB - priA;
+    });
+
+    for (let a of acts) {
+        if (a.char.isFainted) continue;
+
+        if (a.act.type === 'switch') {
+            const party = a.p === 1 ? battleState.p1 : battleState.p2;
+            const prevIdx = a.p === 1 ? battleState.p1ActiveIdx : battleState.p2ActiveIdx;
+            const prevName = party[prevIdx] ? party[prevIdx].name : "???";
+            
+            // オンライン対戦で相手が交代した場合、そのキャラの情報を更新する必要がある
+            if (onlineState.isOnlineBattle && a.p !== onlineState.role) {
+                // サーバーから送られてくるアクションにキャラ詳細を含めるように server.js も修正が必要
+                if (a.act.charDetails) {
+                    party[a.act.index] = {
+                        ...a.act.charDetails,
+                        maxHp: a.act.charDetails.baseStats.hp,
+                        currentHp: a.act.charDetails.currentHp || a.act.charDetails.baseStats.hp,
+                        battleSpd: a.act.charDetails.baseStats.spd,
+                        battleAtk: a.act.charDetails.baseStats.atk,
+                        isFainted: false
+                    };
+                }
+            }
+
+            if (a.p === 1) battleState.p1ActiveIdx = a.act.index;
+            else battleState.p2ActiveIdx = a.act.index;
+            log(`P${a.p}: ${prevName}を戻して ${party[a.act.index].name}を繰り出した！`);
+        } else {
+            const attacker = a.char;
+            const targetSideNum = a.p === 1 ? 2 : 1;
+            const targetIdx = targetSideNum === 1 ? battleState.p1ActiveIdx : battleState.p2ActiveIdx;
+            const target = targetSideNum === 1 ? battleState.p1[targetIdx] : battleState.p2[targetIdx];
+            const targetSideId = a.p === 1 ? 'p2-active-area' : 'p1-active-area';
+
+            log(`P${a.p}: ${attacker.name}の ${a.act.move.name}！`);
+
+            const targetEl = document.getElementById(targetSideId);
+            targetEl.classList.add('shake', 'flash');
+            setTimeout(() => targetEl.classList.remove('shake', 'flash'), 500);
+
+            const move = a.act.move;
+            const resMult = target.resistances[move.res_type] || 1.0;
+            let damage = Math.floor(move.power * (attacker.battleAtk / 80) * resMult);
+
+            if (damage > 0) {
+                if (resMult > 1.0) log("効果は抜群だ！");
+                if (resMult < 1.0) log("効果はいまひとつのようだ...");
+            }
+
+            target.currentHp = Math.max(0, target.currentHp - damage);
+
+            if (move.effect) {
+                const eff = move.effect;
+                if (Math.random() < (eff.chance || 1.0)) {
+                    if (eff.type === 'buff') {
+                        attacker[`battle${eff.stat.charAt(0).toUpperCase() + eff.stat.slice(1)}`] *= eff.value;
+                        log(`${attacker.name}の${eff.stat}が上がった！`);
+                    } else if (eff.type === 'debuff') {
+                        target[`battle${eff.stat.charAt(0).toUpperCase() + eff.stat.slice(1)}`] *= eff.value;
+                        log(`${target.name}の${eff.stat}が下がった！`);
+                    } else if (eff.type === 'heal') {
+                        const healAmt = Math.floor(attacker.maxHp * eff.value);
+                        attacker.currentHp = Math.min(attacker.maxHp, attacker.currentHp + healAmt);
+                        log(`${attacker.name}は体力を回復した！`);
+                    } else if (eff.type === 'drain') {
+                        const drainAmt = Math.floor(damage * eff.value);
+                        attacker.currentHp = Math.min(attacker.maxHp, attacker.currentHp + drainAmt);
+                        log(`${attacker.name}は体力を吸収した！`);
+                    }
+                }
+            }
+
+            if (target.currentHp <= 0) {
+                target.isFainted = true;
                 log(`${target.name}は倒れた！`);
-                battleState.isForcedSwitch = o.targetP;
+
+                const party = targetSideNum === 1 ? battleState.p1 : battleState.p2;
+                const hasSurvivor = party.some(c => !c.isFainted);
+
+                if (!hasSurvivor) {
+                    log(`P${targetSideNum}の全滅！ P${a.p}の勝利！`);
+                    battleState.isProcessing = false;
+                    updateBattleUI();
+                    if (onlineState.isOnlineBattle) document.getElementById('online-back-btn').classList.remove('hidden');
+                    return;
+                } else {
+                    // 交代先選択フラグ
+                    battleState.isForcedSwitch = targetSideNum;
+                    battleState.p1NextAction = null;
+                    battleState.p2NextAction = null;
+                    battleState.isProcessing = false;
+                    updateBattleUI();
+                    return;
+                }
             }
         }
         updateBattleUI();
-        await new Promise(r => setTimeout(r, 800));
+        await new Promise(r => setTimeout(r, 1000));
     }
+
+    battleState.p1NextAction = null;
+    battleState.p2NextAction = null;
     battleState.isProcessing = false;
     updateBattleUI();
 }
 
 function log(m) {
     const d = document.getElementById('battle-log');
-    const e = document.createElement('div'); e.textContent = m;
-    d.appendChild(e); d.scrollTop = d.scrollHeight;
+    const entry = document.createElement('div');
+    entry.textContent = m;
+    d.appendChild(entry);
+    d.scrollTop = d.scrollHeight;
 }
+
+// ----------------------------------------------------
+// オンライン対戦用関数群
+// ----------------------------------------------------
 
 function connectOnline() {
     const name = document.getElementById('online-player-name').value;
-    if (!name) return;
-    socket = io(DEFAULT_SERVER_URL);
-    socket.on('connect', () => {
-        onlineState.name = name; socket.emit('join_lobby', name);
-        document.getElementById('online-login').classList.add('hidden');
-        document.getElementById('online-lobby').classList.remove('hidden');
-    });
-    socket.on('update_player_list', (ps) => {
-        const list = document.getElementById('online-player-list'); list.innerHTML = "";
-        ps.forEach(p => {
-            if (p.id === socket.id) return;
-            const d = document.createElement('div'); d.className = 'player-row';
-            d.innerHTML = `${p.name} <button onclick="socket.emit('send_challenge', '${p.id}')">対戦</button>`;
-            list.appendChild(d);
+    if (!name) return alert("名前を入力してください");
+
+    const connectBtn = document.getElementById('connect-btn');
+    connectBtn.disabled = true;
+    connectBtn.textContent = "接続中...";
+
+    try {
+        // 固定URLで接続
+        socket = io(DEFAULT_SERVER_URL);
+
+        socket.on('connect_error', () => {
+            alert("サーバーに接続できませんでした。");
+            connectBtn.disabled = false;
+            connectBtn.textContent = "接続";
         });
-    });
-    socket.on('receive_challenge', ({ fromId, fromName }) => {
-        if (confirm(`${fromName}から対戦希望。受けますか？`)) socket.emit('respond_challenge', { targetId: fromId, accept: true });
-    });
-    socket.on('match_established', ({ roomId, role }) => {
-        onlineState.roomId = roomId; onlineState.role = role;
-        document.getElementById('online-lobby').classList.add('hidden');
-        document.getElementById('online-regulation').classList.remove('hidden');
-    });
-    socket.on('regulation_decided', () => {
-        document.getElementById('online-regulation').classList.add('hidden');
-        document.getElementById('online-party-select').classList.remove('hidden');
-        const list = document.getElementById('online-party-list');
-        list.innerHTML = myParties.map(p => `<button onclick="window.submitOnlineParty(${p.id})">${p.name}</button>`).join('');
-    });
-    window.submitOnlineParty = (id) => {
-        const p = myParties.find(x => x.id === id);
-        socket.emit('submit_party', { roomId: onlineState.roomId, role: onlineState.role, partyData: p.members });
-    };
-    socket.on('battle_ready_selection', ({ opponentPartySize }) => {
-        onlineState.isOnlineBattle = true;
-        document.getElementById('online-section').classList.add('hidden');
-        document.getElementById('battle-field').classList.remove('hidden');
-        const dummy = Array(opponentPartySize).fill(null);
-        if (onlineState.role === 1) battleState.p2 = dummy; else battleState.p1 = dummy;
-        battleState.isSelectingInitial = true;
-        updateBattleUI();
-    });
-    socket.on('initial_pick_reveal', ({ myIndex, oppIndex, oppActiveChar, oppPartySize }) => {
-        if (onlineState.role === 1) {
-            battleState.p1ActiveIdx = myIndex; battleState.p2ActiveIdx = oppIndex;
-            battleState.p2 = Array(oppPartySize).fill(null); battleState.p2[oppIndex] = oppActiveChar;
-        } else {
-            battleState.p2ActiveIdx = myIndex; battleState.p1ActiveIdx = oppIndex;
-            battleState.p1 = Array(oppPartySize).fill(null); battleState.p1[oppIndex] = oppActiveChar;
-        }
-        battleState.isSelectingInitial = false;
-        document.getElementById('waiting-overlay').classList.add('hidden');
-        updateBattleUI();
-    });
-    socket.on('resolve_turn', ({ outcomes }) => onlineProcess(outcomes));
+
+        socket.on('connect', () => {
+            onlineState.id = socket.id;
+            onlineState.name = name;
+            socket.emit('join_lobby', name);
+
+            document.getElementById('online-login').classList.add('hidden');
+            document.getElementById('online-lobby').classList.remove('hidden');
+            document.getElementById('my-online-name').textContent = name;
+            addOnlineLog("ロビーに入室しました。");
+        });
+
+        socket.on('update_player_list', (players) => {
+            const list = document.getElementById('online-player-list');
+            list.innerHTML = '';
+            players.forEach(p => {
+                if (p.id === socket.id) return; // 自分は表示しない
+                const div = document.createElement('div');
+                div.className = 'player-row';
+                div.innerHTML = `
+                    <span>${p.name} <small>(${p.status})</small></span>
+                    ${p.status === 'idle' ? `<button onclick="sendChallenge('${p.id}')">対戦申込</button>` : ''}
+                `;
+                list.appendChild(div);
+            });
+        });
+
+        socket.on('receive_challenge', ({ fromId, fromName }) => {
+            const msgArea = document.getElementById('online-msg-area');
+            const div = document.createElement('div');
+            div.className = 'challenge-modal';
+            div.innerHTML = `
+                <span><strong>${fromName}</strong>から対戦申し込み！</span>
+                <div>
+                    <button onclick="respondChallenge('${fromId}', true)" style="margin-right:5px; background:var(--primary);">受ける</button>
+                    <button onclick="respondChallenge('${fromId}', false)" style="background:var(--danger);">断る</button>
+                </div>
+            `;
+            msgArea.insertBefore(div, msgArea.firstChild);
+        });
+
+        socket.on('challenge_declined', ({ fromName }) => {
+            addOnlineLog(`${fromName}に対戦を断られました。`);
+        });
+
+        socket.on('match_established', ({ roomId, role, opponentName }) => {
+            onlineState.roomId = roomId;
+            onlineState.role = role;
+            onlineState.opponentName = opponentName;
+            addOnlineLog(`マッチ成立！相手: ${opponentName}`);
+
+            document.getElementById('online-lobby').classList.add('hidden');
+            document.getElementById('online-regulation').classList.remove('hidden');
+        });
+
+        // サーバーからのレギュレーション提案受信
+        socket.on('regulation_proposed', ({ partySize, proposerId }) => {
+            onlineState.partyLimit = partySize;
+            document.getElementById('online-regulation').classList.remove('hidden');
+
+            const regStatus = document.getElementById('reg-status');
+            if (socket.id === proposerId) {
+                // 自分が提案した場合は待機
+                regStatus.innerHTML = `${partySize} on ${partySize} を提案中。相手の承認を待っています...`;
+            } else {
+                // 相手が提案した場合は承認ボタンを表示
+                regStatus.innerHTML = `相手が ${partySize} on ${partySize} を提案しました。 <button class="primary-btn" onclick="window.acceptRegulation()">承認する</button>`;
+            }
+        });
+
+        // レギュレーション決定時の処理
+        socket.on('regulation_decided', ({ partySize }) => {
+            onlineState.partyLimit = partySize;
+
+            // UIの切り替え
+            document.getElementById('online-regulation').classList.add('hidden');
+            document.getElementById('online-party-select').classList.remove('hidden');
+
+            const msg = document.getElementById('party-select-msg');
+            msg.textContent = `レギュレーション: ${partySize} on ${partySize}。使用するパーティを選択してください。`;
+
+            // 選択可能なパーティ一覧を表示
+            window.renderOnlinePartyList();
+        });
+
+        // パーティリストの描画（レギュレーションに合うものだけ表示）
+        window.renderOnlinePartyList = function() {
+            const list = document.getElementById('online-party-list');
+            // レギュレーションの数と一致するメンバー数のパーティだけを抽出
+            const validParties = myParties.filter(p => p.members.length === onlineState.partyLimit);
+
+            if (validParties.length === 0) {
+                list.innerHTML = `<div style="color:var(--danger); padding:10px;">
+            ${onlineState.partyLimit}体編成のパーティが登録されていません。
+            「パーティ編成」タブで作成してください。
+        </div>`;
+                return;
+            }
+
+            list.innerHTML = validParties.map(p => `
+        <div class="player-row">
+            <span>${p.name} (メンバー: ${p.members.length}体)</span>
+            <button class="primary-btn" onclick="window.submitOnlineParty(${p.id})">選択</button>
+        </div>
+    `).join('');
+        };
+
+        // 承認ボタンの動作 (内部関数を削除し、グローバルに定義)
+        // パーティ送信 (内部関数を削除し、グローバルに定義)
+
+
+        socket.on('battle_ready_selection', ({ opponentPartySize }) => {
+            // バトル画面へ移行
+            document.getElementById('online-party-select').classList.add('hidden');
+            document.getElementById('online-section').classList.add('hidden');
+            
+            showSection('battle');
+            document.getElementById('battle-mode-select').classList.add('hidden');
+            document.getElementById('battle-setup').classList.add('hidden');
+            document.getElementById('battle-field').classList.remove('hidden');
+
+            startOnlineBattle(opponentPartySize);
+        });
+
+        // グローバルに関数を公開
+        window.acceptRegulation = function() {
+            socket.emit('accept_regulation', { roomId: onlineState.roomId });
+        };
+
+        window.submitOnlineParty = function(partyId) {
+            const party = myParties.find(p => p.id === partyId);
+            if (!party) return;
+            
+            // レギュレーションの数に合わせてメンバーを制限（先頭から抽出）
+            const selectedMembers = party.members.slice(0, onlineState.partyLimit);
+
+            const initSet = (m) => ({
+                ...m,
+                maxHp: m.baseStats.hp,
+                currentHp: m.baseStats.hp,
+                battleSpd: m.baseStats.spd,
+                battleAtk: m.baseStats.atk,
+                isFainted: false
+            });
+
+            // 自分の役割に合わせてバトル状態を初期化
+            if (onlineState.role === 1) {
+                battleState.p1 = selectedMembers.map(initSet);
+            } else {
+                battleState.p2 = selectedMembers.map(initSet);
+            }
+
+            // サーバーへ送信
+            socket.emit('submit_party', { 
+                roomId: onlineState.roomId, 
+                role: onlineState.role, 
+                partyData: selectedMembers 
+            });
+            
+            document.getElementById('online-party-select').innerHTML = `<h3>送信完了</h3><p>相手の選択を待っています...</p>`;
+        };
+
+        socket.on('initial_pick_reveal', ({ myIndex, oppIndex, oppActiveChar, oppPartySize }) => {
+            // 相手パーティ情報を受信して更新 (最初は出ているキャラのみ)
+            const initSet = (m) => ({
+                ...m,
+                maxHp: m.baseStats.hp,
+                currentHp: m.baseStats.hp,
+                battleSpd: m.baseStats.spd,
+                battleAtk: m.baseStats.atk,
+                isFainted: false
+            });
+
+            // 相手パーティをダミーで初期化し、アクティブなキャラだけセット
+            const dummyParty = Array(oppPartySize).fill(null).map(() => ({ name: "???", isFainted: false, currentHp: 1, maxHp: 1, resistances: {}, moves: [], baseStats: { hp: 1, atk: 1, spd: 1 } }));
+            
+            if (onlineState.role === 1) {
+                battleState.p2 = dummyParty;
+                battleState.p2[oppIndex] = initSet(oppActiveChar);
+            } else {
+                battleState.p1 = dummyParty;
+                battleState.p1[oppIndex] = initSet(oppActiveChar);
+            }
+
+            document.getElementById('waiting-overlay').classList.add('hidden');
+
+            // 選出反映
+            battleState.p1ActiveIdx = onlineState.role === 1 ? myIndex : oppIndex;
+            battleState.p2ActiveIdx = onlineState.role === 1 ? oppIndex : myIndex;
+            battleState.isSelectingInitial = false;
+
+            const p1Name = battleState.p1[battleState.p1ActiveIdx].name;
+            const p2Name = battleState.p2[battleState.p2ActiveIdx].name;
+            log(`バトル開始！ P1:${p1Name} vs P2:${p2Name}`);
+
+            updateBattleUI();
+        });
+
+        socket.on('resolve_turn', ({ p1Action, p2Action }) => {
+            // アクションを受信してローカルステートに適用
+            battleState.p1NextAction = p1Action;
+            battleState.p2NextAction = p2Action;
+
+            // ターン処理実行
+            processTurn();
+        });
+
+        socket.on('opponent_left', () => {
+            alert("相手が切断しました。");
+            returnToLobby();
+        });
+
+    } catch (e) {
+        console.error("Connection failed", e);
+        alert("サーバーに接続できませんでした。");
+    }
+}
+
+function disconnectOnline() {
+    if (socket) socket.disconnect();
+    socket = null;
+    document.getElementById('online-lobby').classList.add('hidden');
+    document.getElementById('online-login').classList.remove('hidden');
+}
+
+function addOnlineLog(msg) {
+    const d = document.getElementById('online-msg-area');
+    const div = document.createElement('div');
+    div.textContent = msg;
+    div.style.padding = "4px 0";
+    div.style.borderBottom = "1px solid #eee";
+    d.insertBefore(div, d.firstChild);
+}
+
+function sendChallenge(id) {
+    socket.emit('send_challenge', id);
+    addOnlineLog("申し込みを送信しました...");
+}
+
+function respondChallenge(id, accept) {
+    socket.emit('respond_challenge', { targetId: id, accept });
+    const modal = document.querySelector('.challenge-modal');
+    if (modal) modal.remove();
 }
 
 function sendRegulation(size) {
+    onlineState.partyLimit = size;
     socket.emit('propose_regulation', { roomId: onlineState.roomId, partySize: size });
-    socket.emit('accept_regulation', { roomId: onlineState.roomId });
+    document.getElementById('reg-status').textContent = `${size} on ${size} を提案中...`;
+}
+
+
+
+function renderOnlinePartySelect() {
+    document.getElementById('online-party-select').classList.remove('hidden');
+    document.getElementById('party-select-msg').textContent = `${onlineState.partyLimit}体以上のパーティを選択してください。`;
+
+    const list = document.getElementById('online-party-list');
+    list.innerHTML = myParties.filter(p => p.members.length >= onlineState.partyLimit).map(p => `
+        <div class="mini-list">
+             <span>${p.name} (${p.members.length}体)</span>
+             <button class="primary-btn" style="width:auto; padding:8px;" onclick="window.submitOnlineParty(${p.id})">決定</button>
+        </div>
+    `).join('');
+}
+
+function startOnlineBattle(oppSize) {
+    onlineState.isOnlineBattle = true;
+    battleState.p1ActiveIdx = -1;
+    battleState.p2ActiveIdx = -1;
+    battleState.isSelectingInitial = true;
+    battleState.isForcedSwitch = null;
+
+    // 相手のパーティはまだ空っぽ(Blind)にするが、枠だけ確保しておくと安全
+    const dummy = Array(oppSize).fill(null);
+    if (onlineState.role === 1) battleState.p2 = dummy;
+    else battleState.p1 = dummy;
+
+    document.getElementById('battle-log').innerHTML = "<div>オンライン対戦開始！初手を選んでください。</div>";
+    updateBattleUI();
+}
+
+function returnToLobby() {
+    if (onlineState.isOnlineBattle) {
+        onlineState.isOnlineBattle = false;
+        socket.emit('leave_battle');
+        document.getElementById('battle-field').classList.add('hidden');
+        document.getElementById('online-back-btn').classList.add('hidden');
+        showSection('battle');
+        showBattleModeSelect();
+    } else {
+        document.getElementById('battle-field').classList.add('hidden');
+        showSection('battle');
+        showBattleModeSelect();
+    }
 }
