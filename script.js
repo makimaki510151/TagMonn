@@ -13,7 +13,7 @@ let battleState = {
     p1NextAction: null, p2NextAction: null,
     isProcessing: false,
     isSelectingInitial: false,
-    isForcedSwitch: null, // 1 or 2
+    isForcedSwitch: null, // 1 or 2 (死に出し時のみ使用)
     isStoryMode: false,
     currentStage: null
 };
@@ -80,7 +80,6 @@ function selectGameMode(mode) {
         showSection('build');
     }
     
-    // モード切り替え時にビルド画面をリセット
     resetBuild();
 }
 
@@ -168,6 +167,10 @@ function showSection(id) {
     }
 }
 
+// ----------------------------------------------------------------
+// Build & Party Functions
+// ----------------------------------------------------------------
+
 function renderBuildScreen() {
     renderTags();
     updateBuildPreview();
@@ -245,8 +248,6 @@ function updateBuildPreview() {
     `;
 
     renderMoveCandidates();
-
-    // 更新ボタンのテキスト切り替え
     const saveBtn = document.getElementById('save-char-btn');
     saveBtn.textContent = currentBuild.id ? "キャラクターを更新" : "キャラクターを保存";
 }
@@ -316,10 +317,8 @@ function saveCharacter() {
     };
 
     if (currentBuild.id) {
-        // 更新処理
         ModeManager.updateCharacter(charData);
     } else {
-        // 新規保存
         charData.id = Date.now();
         ModeManager.saveCharacter(charData);
     }
@@ -332,36 +331,25 @@ function saveCharacter() {
 function resetBuild() {
     currentBuild = { id: null, name: "", tags: [], moves: [] };
     document.getElementById('char-name').value = "";
-    // ボタンの表記などはupdateBuildPreviewでリセットされる
 }
 
 window.editChar = (id) => {
     const char = myChars.find(c => c.id === id);
     if (!char) return;
-    
-    // ストーリーモード以外のキャラはフリーモードでは編集可、
-    // ストーリーモードで作ったキャラはフリーモードでは閲覧のみ（または混在防止のため編集不可）にするのが安全
     if (char.isStoryOrigin && ModeManager.currentMode === 'free') {
         alert("ストーリーモードで作成したキャラクターはフリーモードでは編集できません。");
         return;
     }
-
-    currentBuild = JSON.parse(JSON.stringify(char)); // Deep copy
-    // タグオブジェクトなどがデータ読み込み時の参照と切れている場合を考慮し、IDベースで再取得するのが理想だが、
-    // ここでは保存されたオブジェクトをそのまま使う
-    
+    currentBuild = JSON.parse(JSON.stringify(char));
     document.getElementById('char-name').value = char.name;
     renderBuildScreen();
-    window.scrollTo(0, 0); // 画面上部へスクロール
+    window.scrollTo(0, 0);
 };
 
 function renderSavedChars() {
     const container = document.getElementById('saved-chars-list');
-    // saved-item クラスを mini-list に変更（CSSとの整合性）
     container.innerHTML = myChars.map(c => {
-        // 現在のモードで編集可能か判定
         const isEditable = !(c.isStoryOrigin && ModeManager.currentMode === 'free');
-        
         return `
         <div class="mini-list">
             <span style="font-weight:600; cursor:${isEditable ? 'pointer' : 'default'};" 
@@ -378,22 +366,16 @@ function renderSavedChars() {
 window.deleteChar = (id) => {
     if (!confirm("キャラを削除しますか？")) return;
     const key = ModeManager.currentMode === 'free' ? 'tm_free_chars' : 'tm_story_chars';
-    
-    // 削除対象が現在のモードのデータに含まれているか確認
     let chars = JSON.parse(localStorage.getItem(key) || '[]');
     const targetIdx = chars.findIndex(c => c.id === id);
-    
     if (targetIdx === -1) {
-        // フリーモードで表示されているストーリーキャラを消そうとした場合など
         alert("このモードでは削除できないキャラクターです。");
         return;
     }
-
     chars.splice(targetIdx, 1);
     localStorage.setItem(key, JSON.stringify(chars));
     refreshLocalData();
     renderBuildScreen();
-    // 編集中のキャラだった場合リセット
     if (currentBuild.id === id) resetBuild();
 };
 
@@ -454,14 +436,16 @@ function saveParty() {
         name: name,
         members: [...currentPartyMembers]
     };
-
     ModeManager.saveParty(party);
     refreshLocalData();
-    
     currentPartyMembers = [];
     document.getElementById('party-name').value = "";
     renderPartyScreen();
 }
+
+// ----------------------------------------------------------------
+// Story Mode Functions
+// ----------------------------------------------------------------
 
 function renderStoryScreen() {
     const list = document.getElementById('story-stage-list');
@@ -550,6 +534,10 @@ function showDetail(item, type) {
     }
     detailBox.innerHTML = html;
 }
+
+// ----------------------------------------------------------------
+// Battle System Functions (Restored)
+// ----------------------------------------------------------------
 
 async function checkServerStatus() {
     const lamp = document.getElementById('status-lamp');
@@ -664,11 +652,14 @@ function updateCharDisplay(pNum, char) {
     fillEl.style.width = `${(char.currentHp / char.maxHp) * 100}%`;
 }
 
+// 初期選択や死に出し時のUI
 function renderSelectionPanel() {
     const moveCont = document.getElementById('move-actions');
     const switchCont = document.getElementById('switch-actions');
     moveCont.innerHTML = ""; switchCont.innerHTML = "";
     let pNum = battleState.isSelectingInitial ? (battleState.p1ActiveIdx === -1 ? 1 : 2) : battleState.isForcedSwitch;
+    
+    // ストーリーモードのCPU処理
     if (battleState.isStoryMode && pNum === 2) {
         setTimeout(() => {
             const party = battleState.p2;
@@ -677,6 +668,7 @@ function renderSelectionPanel() {
         }, 500);
         return;
     }
+    
     const container = pNum === 1 ? moveCont : switchCont;
     container.innerHTML = `<h4>キャラ選択</h4><div class="action-grid"></div>`;
     const grid = container.querySelector('.action-grid');
@@ -685,7 +677,22 @@ function renderSelectionPanel() {
         if (!c.isFainted) {
             const btn = document.createElement('button');
             btn.className = 'action-btn';
-            btn.textContent = c.name;
+            
+            // 詳細情報表示
+            let resSummary = '';
+            Object.entries(c.resistances).forEach(([id, val]) => {
+                if (val !== 1.0) {
+                    const name = getResName(parseInt(id)).charAt(0);
+                    resSummary += `<span style="color:${val < 1.0 ? 'var(--success)' : 'var(--danger)'}; margin-right:4px;">${name}${Math.round(val * 100)}</span>`;
+                }
+            });
+
+            btn.innerHTML = `
+                <div style="font-weight:bold; font-size:0.8rem;">${c.name}</div>
+                <div style="font-size:0.7rem; color:var(--text-muted);">H:${Math.floor(c.currentHp)} A:${c.battleAtk} S:${c.battleSpd}</div>
+                <div style="font-size:0.6rem; margin-top:2px;">${resSummary}</div>
+            `;
+            
             btn.onclick = () => selectCharacter(pNum, idx);
             grid.appendChild(btn);
         }
@@ -705,8 +712,11 @@ function selectCharacter(pNum, idx) {
     updateBattleUI();
 }
 
+// ターン中の行動選択パネル（技と交代ボタンを並べる）
 function renderActionPanel(pNum, char, containerId) {
     const cont = document.getElementById(containerId);
+    
+    // CPU処理
     if (battleState.isStoryMode && pNum === 2) {
         if (!battleState.p2NextAction) {
             const move = char.moves[Math.floor(Math.random() * char.moves.length)];
@@ -715,60 +725,146 @@ function renderActionPanel(pNum, char, containerId) {
         }
         return;
     }
+    
     cont.innerHTML = `<h4>P${pNum}の選択</h4><div class="action-grid"></div>`;
     const grid = cont.querySelector('.action-grid');
+    
+    // 技ボタン
     char.moves.forEach(m => {
         const btn = document.createElement('button');
         btn.className = 'action-btn';
         btn.textContent = m.name;
-        btn.onclick = () => {
-            if (pNum === 1) battleState.p1NextAction = { type: 'move', move: m };
-            else battleState.p2NextAction = { type: 'move', move: m };
-            if (battleState.p1NextAction && battleState.p2NextAction) processTurn();
-            else updateBattleUI();
-        };
+        btn.onclick = () => handleAction(pNum, { type: 'move', move: m });
         grid.appendChild(btn);
     });
-    const sBtn = document.createElement('button');
-    sBtn.className = 'action-btn';
-    sBtn.textContent = "交代";
-    sBtn.onclick = () => { battleState.isForcedSwitch = pNum; updateBattleUI(); };
-    grid.appendChild(sBtn);
+    
+    // 交代ボタン（控えキャラを表示）
+    const party = pNum === 1 ? battleState.p1 : battleState.p2;
+    party.forEach((c, idx) => {
+        if (idx !== (pNum === 1 ? battleState.p1ActiveIdx : battleState.p2ActiveIdx) && !c.isFainted) {
+            const btn = document.createElement('button');
+            btn.className = 'action-btn switch';
+            btn.style.textAlign = 'left';
+            btn.style.height = 'auto';
+            btn.style.padding = '8px';
+            btn.style.background = '#f0f9ff'; // 技と区別するための背景色
+
+            let resSummary = '';
+            Object.entries(c.resistances).forEach(([id, val]) => {
+                if (val !== 1.0) {
+                    const name = getResName(parseInt(id)).charAt(0);
+                    resSummary += `<span style="color:${val < 1.0 ? 'var(--success)' : 'var(--danger)'}; margin-right:4px;">${name}${Math.round(val * 100)}</span>`;
+                }
+            });
+
+            btn.innerHTML = `
+                <div style="font-weight:bold; font-size:0.8rem;">交代:${c.name}</div>
+                <div style="font-size:0.7rem; color:var(--text-muted);">H:${Math.floor(c.currentHp)} A:${c.battleAtk} S:${c.battleSpd}</div>
+                <div style="font-size:0.6rem; margin-top:2px;">${resSummary}</div>
+            `;
+
+            btn.onclick = () => handleAction(pNum, { type: 'switch', index: idx });
+            grid.appendChild(btn);
+        }
+    });
+}
+
+function handleAction(pNum, action) {
+    if (pNum === 1) battleState.p1NextAction = action;
+    else battleState.p2NextAction = action;
+    
+    if (battleState.p1NextAction && battleState.p2NextAction) processTurn();
+    else updateBattleUI();
 }
 
 async function processTurn() {
     battleState.isProcessing = true;
+    updateBattleUI(); // パネルを消す
+
     const a1 = battleState.p1[battleState.p1ActiveIdx];
     const a2 = battleState.p2[battleState.p2ActiveIdx];
+    
     const actions = [
         { p: 1, act: battleState.p1NextAction, char: a1, target: a2 },
         { p: 2, act: battleState.p2NextAction, char: a2, target: a1 }
-    ].sort((a, b) => b.char.battleSpd - a.char.battleSpd);
+    ].sort((a, b) => {
+        // 優先度計算: 交代(1000) > 技優先度 > 素早さ
+        const priA = (a.act.type === 'switch' ? 1000 : (a.act.move.priority || 0) * 100) + a.char.battleSpd;
+        const priB = (b.act.type === 'switch' ? 1000 : (b.act.move.priority || 0) * 100) + b.char.battleSpd;
+        return priB - priA;
+    });
 
     for (let action of actions) {
         if (action.char.isFainted) continue;
+
+        // 交代アクションの処理
+        if (action.act.type === 'switch') {
+            const party = action.p === 1 ? battleState.p1 : battleState.p2;
+            const prevName = action.char.name;
+            const nextIdx = action.act.index;
+            const nextChar = party[nextIdx];
+            
+            if (action.p === 1) battleState.p1ActiveIdx = nextIdx;
+            else battleState.p2ActiveIdx = nextIdx;
+            
+            log(`P${action.p}: ${prevName}を戻して ${nextChar.name}を繰り出した！`);
+            updateBattleUI();
+            await new Promise(r => setTimeout(r, 1000));
+            continue; // 交代したらこのターンは終わり
+        }
+
+        // 攻撃技の処理
+        // ターゲットが交代している可能性があるため再取得
+        const currentTargetIdx = action.p === 1 ? battleState.p2ActiveIdx : battleState.p1ActiveIdx;
+        const currentTarget = action.p === 1 ? battleState.p2[currentTargetIdx] : battleState.p1[currentTargetIdx];
+
         log(`${action.char.name}の${action.act.move.name}！`);
-        const res = BattleLogic.calculateDamage(action.act.move, action.char, action.target);
+        const res = BattleLogic.calculateDamage(action.act.move, action.char, currentTarget);
+        
         if (res.isHit) {
-            action.target.currentHp -= res.damage;
+            currentTarget.currentHp -= res.damage;
             log(`${res.damage}のダメージ！`);
-            if (action.target.currentHp <= 0) {
-                action.target.currentHp = 0;
-                action.target.isFainted = true;
-                log(`${action.target.name}は倒れた！`);
-                if (!(action.target === a1 ? battleState.p1 : battleState.p2).some(c => !c.isFainted)) {
+            
+            if (res.resMult > 1.0) log("効果は抜群だ！");
+            if (res.resMult < 1.0) log("効果はいまひとつのようだ...");
+
+            // 効果処理
+            if (action.act.move.effect) {
+                const effectResult = BattleLogic.applyEffect(action.act.move.effect, action.char, currentTarget, res.damage);
+                if (effectResult) {
+                     if (effectResult.type === 'buff') log(`${action.char.name}の${effectResult.stat}が上がった！`);
+                     else if (effectResult.type === 'debuff') log(`${currentTarget.name}の${effectResult.stat}が下がった！`);
+                     else if (effectResult.type === 'heal') log(`${action.char.name}は回復した！`);
+                }
+            }
+
+            if (currentTarget.currentHp <= 0) {
+                currentTarget.currentHp = 0;
+                currentTarget.isFainted = true;
+                log(`${currentTarget.name}は倒れた！`);
+                
+                // 全滅判定
+                const party = action.p === 1 ? battleState.p2 : battleState.p1;
+                if (!party.some(c => !c.isFainted)) {
                     log(`P${action.p}の勝利！`);
                     if (battleState.isStoryMode && action.p === 1) handleStoryClear();
                     battleState.isProcessing = false;
+                    updateBattleUI();
                     return;
                 }
-                battleState.isForcedSwitch = (action.target === a1 ? 1 : 2);
+                
+                // 倒れた場合、次の行動（倒された側の攻撃など）はキャンセルされるが、
+                // 強制交代（死に出し）フェーズへ移行するためループを抜ける
+                battleState.isForcedSwitch = (action.p === 1 ? 2 : 1);
                 break;
             }
-        } else log("攻撃は外れた！");
+        } else {
+            log("攻撃は外れた！");
+        }
         updateBattleUI();
-        await new Promise(r => setTimeout(r, 800));
+        await new Promise(r => setTimeout(r, 1000));
     }
+    
     battleState.p1NextAction = null; battleState.p2NextAction = null;
     battleState.isProcessing = false;
     updateBattleUI();
@@ -802,7 +898,7 @@ function log(m) {
     d.scrollTop = d.scrollHeight;
 }
 
-// オンライン対戦用関数群（復元）
+// オンライン対戦用関数群
 function connectOnline() {
     const name = document.getElementById('online-player-name').value;
     if (!name) return alert("名前を入力してください");
@@ -884,8 +980,10 @@ window.sendRegulation = (size) => { socket.emit('propose_regulation', { roomId: 
 window.returnToLobby = () => { location.reload(); };
 
 async function processOnlineTurn(outcomes) {
-    // オンライン用のターン処理（サーバーからの結果を反映）
+    // オンライン用のターン処理
     battleState.isProcessing = true;
+    updateBattleUI();
+    
     for (let out of outcomes) {
         if (out.type === 'move') {
              log(`P${out.p}: ${out.attackerName}の ${out.moveName}！`);
