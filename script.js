@@ -383,9 +383,9 @@ window.setBattleParty = (pNum, pId) => {
 
 function startBattle() {
     if (!selectedP1 || !selectedP2) return alert("パーティを選んでください");
-    
+
     onlineState.isOnlineBattle = false; // ローカルバトル
-    
+
     document.getElementById('battle-setup').classList.add('hidden');
     document.getElementById('battle-field').classList.remove('hidden');
     document.getElementById('online-back-btn').classList.add('hidden'); // ローカルでは戻るボタン非表示
@@ -402,7 +402,7 @@ function startBattle() {
     };
     battleState.p1 = selectedP1.members.map(initSet);
     battleState.p2 = selectedP2.members.map(initSet);
-    
+
     // 選出フェーズの初期化
     battleState.p1ActiveIdx = -1;
     battleState.p2ActiveIdx = -1;
@@ -480,7 +480,7 @@ function updateCharDisplay(pNum, char) {
 function renderSelectionPanel() {
     const moveCont = document.getElementById('move-actions');
     const switchCont = document.getElementById('switch-actions');
-    
+
     // 表示のリセット
     moveCont.innerHTML = "";
     switchCont.innerHTML = "";
@@ -555,13 +555,13 @@ function generateSelectionButtons(pNum, grid) {
 
 function selectCharacter(pNum, idx) {
     const party = pNum === 1 ? battleState.p1 : battleState.p2;
-    
+
     if (onlineState.isOnlineBattle) {
         // オンライン: サーバーに選択を送信
         if (battleState.isSelectingInitial) {
-             socket.emit('submit_initial_pick', { roomId: onlineState.roomId, role: onlineState.role, index: idx });
-             document.getElementById('waiting-overlay').classList.remove('hidden');
-             // 一時的に自分のステートには反映せず、サーバーのrevealイベントを待つ
+            socket.emit('submit_initial_pick', { roomId: onlineState.roomId, role: onlineState.role, index: idx });
+            document.getElementById('waiting-overlay').classList.remove('hidden');
+            // 一時的に自分のステートには反映せず、サーバーのrevealイベントを待つ
         } else if (battleState.isForcedSwitch) {
             // 強制交代時
             socket.emit('submit_action', { roomId: onlineState.roomId, role: onlineState.role, action: { type: 'switch', index: idx } });
@@ -581,11 +581,11 @@ function selectCharacter(pNum, idx) {
     } else if (battleState.isForcedSwitch) {
         if (pNum === 1) battleState.p1ActiveIdx = idx;
         else battleState.p2ActiveIdx = idx;
-        
+
         log(`P${pNum}: 交代して ${party[idx].name}を繰り出した！`);
         battleState.isForcedSwitch = null;
     }
-    
+
     updateBattleUI();
 }
 
@@ -602,7 +602,7 @@ function renderActionPanel(pNum, char, containerId) {
     } else {
         cont.innerHTML = `<h4>Player ${pNum} の選択</h4><div class="action-grid"></div>`;
     }
-    
+
     const grid = cont.querySelector('.action-grid');
 
     if (battleState.isProcessing || battleState.isForcedSwitch) return;
@@ -671,9 +671,9 @@ function handleAction(pNum, action) {
         // 自分のアクションだけ仮セットしてUIロック
         if (pNum === 1) battleState.p1NextAction = action;
         else battleState.p2NextAction = action;
-        
+
         document.getElementById('waiting-overlay').classList.remove('hidden');
-        renderActionPanel(pNum, (pNum===1?battleState.p1[battleState.p1ActiveIdx]:battleState.p2[battleState.p2ActiveIdx]), pNum===1?'move-actions':'switch-actions');
+        renderActionPanel(pNum, (pNum === 1 ? battleState.p1[battleState.p1ActiveIdx] : battleState.p2[battleState.p2ActiveIdx]), pNum === 1 ? 'move-actions' : 'switch-actions');
     } else {
         // ローカル
         if (pNum === 1) battleState.p1NextAction = action;
@@ -764,15 +764,15 @@ async function processTurn() {
             if (target.currentHp <= 0) {
                 target.isFainted = true;
                 log(`${target.name}は倒れた！`);
-                
+
                 const party = targetSideNum === 1 ? battleState.p1 : battleState.p2;
                 const hasSurvivor = party.some(c => !c.isFainted);
-                
+
                 if (!hasSurvivor) {
                     log(`P${targetSideNum}の全滅！ P${a.p}の勝利！`);
                     battleState.isProcessing = false;
                     updateBattleUI();
-                    if(onlineState.isOnlineBattle) document.getElementById('online-back-btn').classList.remove('hidden');
+                    if (onlineState.isOnlineBattle) document.getElementById('online-back-btn').classList.remove('hidden');
                     return;
                 } else {
                     // 交代先選択フラグ
@@ -781,7 +781,7 @@ async function processTurn() {
                     battleState.p2NextAction = null;
                     battleState.isProcessing = false;
                     updateBattleUI();
-                    return; 
+                    return;
                 }
             }
         }
@@ -815,12 +815,12 @@ function connectOnline() {
     try {
         // Socket接続 (URLがあれば指定、なければデフォルト)
         socket = serverUrl ? io(serverUrl) : io();
-        
+
         socket.on('connect', () => {
             onlineState.id = socket.id;
             onlineState.name = name;
             socket.emit('join_lobby', name);
-            
+
             document.getElementById('online-login').classList.add('hidden');
             document.getElementById('online-lobby').classList.remove('hidden');
             document.getElementById('my-online-name').textContent = name;
@@ -865,28 +865,104 @@ function connectOnline() {
             onlineState.role = role;
             onlineState.opponentName = opponentName;
             addOnlineLog(`マッチ成立！相手: ${opponentName}`);
-            
+
             document.getElementById('online-lobby').classList.add('hidden');
             document.getElementById('online-regulation').classList.remove('hidden');
         });
 
-        socket.on('regulation_proposed', ({ partySize }) => {
-            // 簡易的に相手の提案を即座に表示して同意ボタン
-             const status = document.getElementById('reg-status');
-             status.innerHTML = `相手が ${partySize} on ${partySize} を提案中... <button class="tag-btn" onclick="acceptRegulation(${partySize})">同意して開始</button>`;
+        // サーバーからのレギュレーション提案受信
+        socket.on('regulation_proposed', ({ partySize, proposerId }) => {
+            onlineState.partyLimit = partySize;
+            document.getElementById('online-regulation').classList.remove('hidden');
+
+            const regStatus = document.getElementById('reg-status');
+            if (socket.id === proposerId) {
+                // 自分が提案した場合は待機
+                regStatus.innerHTML = `${partySize} on ${partySize} を提案中。相手の承認を待っています...`;
+            } else {
+                // 相手が提案した場合は承認ボタンを表示
+                regStatus.innerHTML = `相手が ${partySize} on ${partySize} を提案しました。 <button class="primary-btn" onclick="acceptRegulation()">承認する</button>`;
+            }
         });
 
-        socket.on('regulation_decided', () => {
-             document.getElementById('online-regulation').classList.add('hidden');
-             renderOnlinePartySelect();
+        // レギュレーション決定時の処理
+        socket.on('regulation_decided', ({ partySize }) => {
+            onlineState.partyLimit = partySize;
+
+            // UIの切り替え
+            document.getElementById('online-regulation').classList.add('hidden');
+            document.getElementById('online-party-select').classList.remove('hidden');
+
+            const msg = document.getElementById('party-select-msg');
+            msg.textContent = `レギュレーション: ${partySize} on ${partySize}。使用するパーティを選択してください。`;
+
+            // 選択可能なパーティ一覧を表示
+            renderOnlinePartyList();
         });
+
+        // パーティリストの描画（レギュレーションに合うものだけ表示）
+        function renderOnlinePartyList() {
+            const list = document.getElementById('online-party-list');
+            // レギュレーションの数と一致するメンバー数のパーティだけを抽出
+            const validParties = myParties.filter(p => p.members.length === onlineState.partyLimit);
+
+            if (validParties.length === 0) {
+                list.innerHTML = `<div style="color:var(--danger); padding:10px;">
+            ${onlineState.partyLimit}体編成のパーティが登録されていません。
+            「パーティ編成」タブで作成してください。
+        </div>`;
+                return;
+            }
+
+            list.innerHTML = validParties.map(p => `
+        <div class="player-row">
+            <span>${p.name} (メンバー: ${p.members.length}体)</span>
+            <button class="primary-btn" onclick="submitOnlineParty(${p.id})">選択</button>
+        </div>
+    `).join('');
+        }
+
+        // 承認ボタンの動作
+        function acceptRegulation() {
+            socket.emit('accept_regulation', { roomId: onlineState.roomId });
+        }
+
+        // パーティ送信
+        function submitOnlineParty(partyId) {
+            const party = myParties.find(p => p.id === partyId);
+            if (!party) return;
+
+            const initSet = (m) => ({
+                ...m,
+                maxHp: m.baseStats.hp,
+                currentHp: m.baseStats.hp,
+                battleSpd: m.baseStats.spd,
+                battleAtk: m.baseStats.atk,
+                isFainted: false
+            });
+
+            // 自分の役割に合わせてバトル状態を初期化
+            if (onlineState.role === 1) {
+                battleState.p1 = party.members.map(initSet);
+            } else {
+                battleState.p2 = party.members.map(initSet);
+            }
+
+            socket.emit('submit_party', {
+                roomId: onlineState.roomId,
+                partyData: party.members,
+                role: onlineState.role
+            });
+
+            document.getElementById('online-party-list').innerHTML = "<div>相手の選択を待っています...</div>";
+        }
 
         socket.on('battle_ready_selection', ({ opponentPartySize }) => {
             // バトル画面へ移行
             document.getElementById('online-party-select').classList.add('hidden');
             document.getElementById('online-section').classList.add('hidden');
             document.getElementById('battle-field').classList.remove('hidden');
-            
+
             startOnlineBattle(opponentPartySize);
         });
 
@@ -906,16 +982,16 @@ function connectOnline() {
             else battleState.p1 = oppParty.map(initSet);
 
             document.getElementById('waiting-overlay').classList.add('hidden');
-            
+
             // 選出反映
             battleState.p1ActiveIdx = onlineState.role === 1 ? myIndex : oppIndex;
             battleState.p2ActiveIdx = onlineState.role === 1 ? oppIndex : myIndex;
             battleState.isSelectingInitial = false;
-            
+
             const p1Name = battleState.p1[battleState.p1ActiveIdx].name;
             const p2Name = battleState.p2[battleState.p2ActiveIdx].name;
             log(`バトル開始！ P1:${p1Name} vs P2:${p2Name}`);
-            
+
             updateBattleUI();
         });
 
@@ -923,14 +999,14 @@ function connectOnline() {
             // アクションを受信してローカルステートに適用
             battleState.p1NextAction = p1Action;
             battleState.p2NextAction = p2Action;
-            
+
             // ターン処理実行
             processTurn();
         });
-        
+
         socket.on('opponent_left', () => {
-             alert("相手が切断しました。");
-             returnToLobby();
+            alert("相手が切断しました。");
+            returnToLobby();
         });
 
     } catch (e) {
@@ -980,7 +1056,7 @@ function acceptRegulation(size) {
 function renderOnlinePartySelect() {
     document.getElementById('online-party-select').classList.remove('hidden');
     document.getElementById('party-select-msg').textContent = `${onlineState.partyLimit}体以上のパーティを選択してください。`;
-    
+
     const list = document.getElementById('online-party-list');
     list.innerHTML = myParties.filter(p => p.members.length >= onlineState.partyLimit).map(p => `
         <div class="mini-list">
@@ -994,7 +1070,7 @@ function confirmOnlineParty(pid) {
     const party = myParties.find(p => p.id === pid);
     // レギュレーション数に合わせて先頭から抽出
     const selectedMembers = party.members.slice(0, onlineState.partyLimit);
-    
+
     // 自分のパーティをローカルセット
     const initSet = (m) => ({
         ...m,
@@ -1004,13 +1080,13 @@ function confirmOnlineParty(pid) {
         battleAtk: m.baseStats.atk,
         isFainted: false
     });
-    
+
     if (onlineState.role === 1) battleState.p1 = selectedMembers.map(initSet);
     else battleState.p2 = selectedMembers.map(initSet);
 
     // サーバーに送信 (詳細データごと送る)
     socket.emit('submit_party', { roomId: onlineState.roomId, partyData: selectedMembers, role: onlineState.role });
-    
+
     document.getElementById('online-party-list').innerHTML = "<div>待機中...</div>";
 }
 
@@ -1020,10 +1096,10 @@ function startOnlineBattle(oppSize) {
     battleState.p2ActiveIdx = -1;
     battleState.isSelectingInitial = true;
     battleState.isForcedSwitch = null;
-    
+
     // 相手のパーティはまだ空っぽ(Blind)にするが、枠だけ確保しておくと安全
     const dummy = Array(oppSize).fill(null);
-    if (onlineState.role === 1) battleState.p2 = dummy; 
+    if (onlineState.role === 1) battleState.p2 = dummy;
     else battleState.p1 = dummy;
 
     document.getElementById('battle-log').innerHTML = "<div>オンライン対戦開始！初手を選んでください。</div>";

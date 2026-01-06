@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,6 +8,7 @@
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 </head>
+
 <body>
     <header>
         <h1>Tagmon Build</h1>
@@ -36,10 +38,11 @@
                 <div class="preview">
                     <h3>キャラクター保存</h3>
                     <div class="stat-box" id="stat-preview">
-                        </div>
-                    <input type="text" id="char-name" placeholder="キャラクター名を入力" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 15px; box-sizing: border-box;">
+                    </div>
+                    <input type="text" id="char-name" placeholder="キャラクター名を入力"
+                        style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 15px; box-sizing: border-box;">
                     <button id="save-char-btn" class="primary-btn">キャラクターを保存</button>
-                    
+
                     <h3 style="margin-top: 30px;">保存済みキャラ</h3>
                     <div id="saved-chars-list" class="saved-area"></div>
                 </div>
@@ -55,9 +58,10 @@
                 <div class="preview">
                     <h3>パーティ編成 (最大6体)</h3>
                     <div id="current-party-list" class="saved-area" style="height: 240px; margin-bottom: 15px;"></div>
-                    <input type="text" id="party-name" placeholder="パーティ名を入力" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 15px; box-sizing: border-box;">
+                    <input type="text" id="party-name" placeholder="パーティ名を入力"
+                        style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 15px; box-sizing: border-box;">
                     <button id="save-party-btn" class="primary-btn">パーティを保存</button>
-                    
+
                     <h3 style="margin-top: 30px;">保存済みパーティ</h3>
                     <div id="saved-parties-list" class="saved-area"></div>
                 </div>
@@ -89,17 +93,21 @@
                     <div class="side-ui left" id="p1-active-area">
                         <div id="p1-active-info"></div>
                         <div class="hp-container">
-                            <div class="hp-bar"><div id="p1-fill" class="fill"></div></div>
+                            <div class="hp-bar">
+                                <div id="p1-fill" class="fill"></div>
+                            </div>
                             <div class="hp-text">HP</div>
                         </div>
                     </div>
-                    
+
                     <div class="vs-label">VS</div>
-                    
+
                     <div class="side-ui right" id="p2-active-area">
                         <div id="p2-active-info"></div>
                         <div class="hp-container">
-                            <div class="hp-bar"><div id="p2-hp-fill" class="fill"></div></div>
+                            <div class="hp-bar">
+                                <div id="p2-hp-fill" class="fill"></div>
+                            </div>
                             <div class="hp-text">HP</div>
                         </div>
                     </div>
@@ -112,7 +120,8 @@
                     <div id="switch-actions" class="control-group"></div>
                 </div>
 
-                <button id="online-back-btn" class="primary-btn hidden" style="margin-top: 15px; background: #64748b;" onclick="returnToLobby()">ロビーに戻る</button>
+                <button id="online-back-btn" class="primary-btn hidden" style="margin-top: 15px; background: #64748b;"
+                    onclick="returnToLobby()">ロビーに戻る</button>
             </div>
         </section>
 
@@ -120,14 +129,18 @@
             <div id="online-login">
                 <h3>オンラインロビーに入室</h3>
                 <div style="margin-bottom: 15px;">
-                    <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:5px;">サーバーURL (例: https://xxxx.pinggy.io)</label>
-                    <input type="text" id="online-server-url" placeholder="空欄の場合は現在の場所(localhost等)に接続" style="padding: 12px; width: 100%; box-sizing: border-box;">
+                    <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:5px;">サーバーURL
+                        (例: https://xxxx.pinggy.io)</label>
+                    <input type="text" id="online-server-url" placeholder="空欄の場合は現在の場所(localhost等)に接続"
+                        style="padding: 12px; width: 100%; box-sizing: border-box;">
                 </div>
                 <div style="margin-bottom: 15px;">
-                    <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:5px;">プレイヤー名</label>
+                    <label
+                        style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:5px;">プレイヤー名</label>
                     <div style="display: flex; gap: 10px;">
                         <input type="text" id="online-player-name" placeholder="あなたの名前" style="padding: 12px; flex: 1;">
-                        <button onclick="connectOnline()" class="primary-btn" style="width: auto; padding-left: 30px; padding-right: 30px;">接続</button>
+                        <button onclick="connectOnline()" class="primary-btn"
+                            style="width: auto; padding-left: 30px; padding-right: 30px;">接続</button>
                     </div>
                 </div>
                 <p style="font-size: 0.9rem; color: var(--text-muted);">※サーバーが起動している必要があります。</p>
@@ -159,7 +172,8 @@
                     <button class="tag-btn" onclick="sendRegulation(3)">3 on 3</button>
                     <button class="tag-btn" onclick="sendRegulation(6)">6 on 6</button>
                 </div>
-                <div id="reg-status" style="margin-top: 10px; color: var(--primary);"></div>
+                <div id="reg-status" style="margin-top: 20px; padding: 15px; background: #f0f7ff; border-radius: 8px;">
+                </div>
             </div>
 
             <div id="online-party-select" class="hidden">
@@ -172,4 +186,5 @@
 
     <script src="script.js"></script>
 </body>
+
 </html>

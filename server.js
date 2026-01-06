@@ -5,10 +5,10 @@ const { Server } = require('socket.io');
 const app = express();
 const server = http.createServer(app);
 const io = require('socket.io')(server, {
-  cors: {
-    origin: "https://makimaki510151.github.io", // 通信を許可するURL
-    methods: ["GET", "POST"]
-  }
+    cors: {
+        origin: "https://makimaki510151.github.io", // 通信を許可するURL
+        methods: ["GET", "POST"]
+    }
 });
 
 // 静的ファイルの配信（ローカル確認用）
@@ -56,7 +56,7 @@ io.on('connection', (socket) => {
             // 両者に通知（P1, P2の割り当て）
             io.to(targetId).emit('match_established', { roomId, role: 1, opponentName: players[socket.id].name });
             io.to(socket.id).emit('match_established', { roomId, role: 2, opponentName: players[targetId].name });
-            
+
             io.emit('update_player_list', Object.values(players));
         } else {
             io.to(targetId).emit('challenge_declined', { fromName: players[socket.id].name });
@@ -67,19 +67,26 @@ io.on('connection', (socket) => {
     socket.on('propose_regulation', ({ roomId, partySize }) => {
         const room = rooms[roomId];
         if (!room) return;
-        io.to(room.p1).to(room.p2).emit('regulation_proposed', { partySize });
+        // 提案されたサイズを保持
+        room.regulation = partySize;
+        // 部屋の全員に通知（誰が提案したかに関わらず）
+        io.to(room.p1).to(room.p2).emit('regulation_proposed', { partySize, proposerId: socket.id });
     });
 
+    // 承認を受け取った時
     socket.on('accept_regulation', ({ roomId }) => {
-        // 片方が同意したら即決定とする（簡易実装）
-        io.to(roomId).emit('regulation_decided');
+        const room = rooms[roomId];
+        if (!room) return;
+
+        // 部屋の全員（提案側と承認側）に、決定したサイズを通知して画面遷移させる
+        io.to(roomId).emit('regulation_decided', { partySize: room.regulation });
     });
 
     // 5. パーティ情報送信
     socket.on('submit_party', ({ roomId, partyData, role }) => {
         const room = rooms[roomId];
         if (!room) return;
-        
+
         if (role === 1) room.p1Party = partyData;
         else room.p2Party = partyData;
 
@@ -100,15 +107,15 @@ io.on('connection', (socket) => {
 
         if (room.p1Action && room.p2Action) {
             // 両者選択完了。相手の情報を公開
-            io.to(room.p1).emit('initial_pick_reveal', { 
+            io.to(room.p1).emit('initial_pick_reveal', {
                 myIndex: room.p1Action.index,
                 oppIndex: room.p2Action.index,
                 oppParty: room.p2Party // ここで初めて相手のパーティ詳細を送る
             });
-            io.to(room.p2).emit('initial_pick_reveal', { 
+            io.to(room.p2).emit('initial_pick_reveal', {
                 myIndex: room.p2Action.index,
                 oppIndex: room.p1Action.index,
-                oppParty: room.p1Party 
+                oppParty: room.p1Party
             });
             // アクションリセット
             room.p1Action = null;
@@ -131,7 +138,7 @@ io.on('connection', (socket) => {
                 p2Action: room.p2Action
             };
             io.to(room.p1).to(room.p2).emit('resolve_turn', data);
-            
+
             room.p1Action = null;
             room.p2Action = null;
         }
