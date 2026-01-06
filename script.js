@@ -17,7 +17,7 @@ let battleState = {
 };
 
 // オンライン用変数
-let socket = null;
+let socket = io("https://makkili.a.pinggy.link");
 let onlineState = {
     id: null,
     name: "",
