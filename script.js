@@ -1262,15 +1262,34 @@ function connectOnline() {
 
             for (const out of outcomes) {
                 if (out.type === 'move') {
-                    log(`P${out.p}の${out.moveName}！`);
-                    log(`${out.damage}のダメージ！`);
-                    const targetSide = out.targetP === 1 ? battleState.p1 : battleState.p2;
-                    const targetIdx = out.targetP === 1 ? battleState.p1ActiveIdx : battleState.p2ActiveIdx;
-                    targetSide[targetIdx].currentHp = out.targetHp;
-                    targetSide[targetIdx].isFainted = out.targetFainted;
+                    log(`P${out.p}: ${out.attackerName}の ${out.moveName}！`);
+                    
+                    if (out.isHit) {
+                        if (out.damage > 0) {
+                            if (out.resMult > 1.0) log("効果は抜群だ！");
+                            if (out.resMult < 1.0) log("効果はいまひとつのようだ...");
+                        }
+                        
+                        const targetSide = out.targetP === 1 ? battleState.p1 : battleState.p2;
+                        const targetIdx = out.targetP === 1 ? battleState.p1ActiveIdx : battleState.p2ActiveIdx;
+                        targetSide[targetIdx].currentHp = out.targetHp;
+                        targetSide[targetIdx].isFainted = out.targetFainted;
+
+                        if (out.targetFainted) {
+                            log(`${targetSide[targetIdx].name}は倒れた！`);
+                        }
+                    } else {
+                        log("攻撃は外れた！");
+                    }
                 }
                 else if (out.type === 'heal') {
-                    log(`P${out.p}の${out.moveName}！ HPが${out.healAmt}回復した！`);
+                    log(`P${out.p}: ${out.attackerName}は体力を回復した！`);
+                    const side = out.p === 1 ? battleState.p1 : battleState.p2;
+                    const idx = out.p === 1 ? battleState.p1ActiveIdx : battleState.p2ActiveIdx;
+                    side[idx].currentHp = out.currentHp;
+                }
+                else if (out.type === 'drain') {
+                    log(`P${out.p}: ${out.attackerName}は体力を吸収した！`);
                     const side = out.p === 1 ? battleState.p1 : battleState.p2;
                     const idx = out.p === 1 ? battleState.p1ActiveIdx : battleState.p2ActiveIdx;
                     side[idx].currentHp = out.currentHp;
@@ -1278,16 +1297,24 @@ function connectOnline() {
                 else if (out.type === 'stat_change') {
                     const side = out.targetP === 1 ? battleState.p1 : battleState.p2;
                     const idx = out.targetP === 1 ? battleState.p1ActiveIdx : battleState.p2ActiveIdx;
+                    const targetName = side[idx].name;
 
                     if (out.stat === 'resistance') {
                         side[idx].resistances[out.resType] = out.newValue;
-                        const msg = out.isBuff ? "耐性が上がった！" : "耐性が下がった！";
-                        const targetName = out.targetP === onlineState.role ? "自分" : "相手";
-                        log(`P${out.p}の${out.moveName}！ ${targetName}の${msg}`);
+                        const msg = out.isBuff ? "上がった！" : "下がった！";
+                        log(`${targetName}の耐性が${msg}`);
+                    } else {
+                        side[idx][`battle${out.stat.charAt(0).toUpperCase() + out.stat.slice(1)}`] = out.newValue;
+                        const msg = out.isBuff ? "上がった！" : "下がった！";
+                        log(`${targetName}の${out.stat}が${msg}`);
                     }
                 }
                 else if (out.type === 'switch') {
-                    log(`P${out.p}は${out.char.name}に交代！`);
+                    const party = out.p === 1 ? battleState.p1 : battleState.p2;
+                    const prevIdx = out.p === 1 ? battleState.p1ActiveIdx : battleState.p2ActiveIdx;
+                    const prevName = party[prevIdx] ? party[prevIdx].name : "???";
+                    
+                    log(`P${out.p}: ${prevName}を戻して ${out.char.name}を繰り出した！`);
                     if (out.p === 1) {
                         battleState.p1ActiveIdx = out.index;
                         battleState.p1[out.index] = out.char;
@@ -1298,7 +1325,7 @@ function connectOnline() {
                 }
 
                 updateBattleUI();
-                await new Promise(r => setTimeout(r, 800));
+                await new Promise(r => setTimeout(r, 1000));
             }
 
             battleState.isProcessing = false;

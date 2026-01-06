@@ -145,9 +145,13 @@ io.on('connection', (socket) => {
 
             // 素早さ順にソート（交代は最優先）
             actions.sort((a, b) => {
-                const priority = (act) => act.type === 'switch' ? 999 : 0;
-                if (priority(a.act) !== priority(b.act)) return priority(b.act) - priority(a.act);
-                return b.char.battleSpd - a.char.battleSpd;
+                const priority = (act) => {
+                    if (act.type === 'switch') return 1000;
+                    return (act.move.priority || 0) * 100;
+                };
+                const priA = priority(a.act) + a.char.battleSpd;
+                const priB = priority(b.act) + b.char.battleSpd;
+                return priB - priA;
             });
 
             for (const a of actions) {
@@ -163,13 +167,27 @@ io.on('connection', (socket) => {
                     const move = a.act.move;
                     const battleResult = BattleLogic.calculateDamage(move, attacker, target);
 
-                    if (!battleResult.isHit) {
-                        outcomes.push({
-                            type: 'miss', p: attackerSide, moveName: move.name
-                        });
-                    } else {
-                        const damage = battleResult.damage;
-                        const resMult = battleResult.resMult;
+                    const damage = battleResult.damage;
+                    const resMult = battleResult.resMult;
+                    const isHit = battleResult.isHit;
+
+                    outcomes.push({
+                        type: 'move',
+                        p: attackerSide,
+                        attackerName: attacker.name,
+                        moveName: move.name,
+                        isHit: isHit,
+                        damage: damage,
+                        resMult: resMult,
+                        targetP: targetSide,
+                        targetHp: isHit ? Math.max(0, target.currentHp - damage) : target.currentHp,
+                        targetFainted: isHit && (target.currentHp - damage <= 0)
+                    });
+
+                    if (isHit) {
+                        // ダメージの適用
+                        target.currentHp = Math.max(0, target.currentHp - damage);
+                        if (target.currentHp <= 0) target.isFainted = true;
 
                         // 効果の適用
                         if (move.effect) {
@@ -177,18 +195,17 @@ io.on('connection', (socket) => {
                             if (effectResult) {
                                 if (effectResult.type === 'heal') {
                                     outcomes.push({
-                                        type: 'heal', p: attackerSide, moveName: move.name, healAmt: effectResult.amount, currentHp: attacker.currentHp
+                                        type: 'heal', p: attackerSide, attackerName: attacker.name, moveName: move.name, healAmt: effectResult.amount, currentHp: attacker.currentHp
                                     });
                                 } else if (effectResult.type === 'drain') {
                                     outcomes.push({
-                                        type: 'drain', p: attackerSide, moveName: move.name, drainAmt: effectResult.amount, currentHp: attacker.currentHp
+                                        type: 'drain', p: attackerSide, attackerName: attacker.name, moveName: move.name, drainAmt: effectResult.amount, currentHp: attacker.currentHp
                                     });
                                 } else if (effectResult.type === 'buff' || effectResult.type === 'debuff') {
                                     const isBuff = effectResult.type === 'buff';
                                     const targetRole = isBuff ? attackerSide : targetSide;
                                     const targetChar = isBuff ? attacker : target;
                                     
-                                    // 耐性変化の場合
                                     if (effectResult.stat === 'def') {
                                         outcomes.push({
                                             type: 'stat_change',
@@ -201,7 +218,6 @@ io.on('connection', (socket) => {
                                             isBuff: isBuff
                                         });
                                     } else {
-                                        // その他のステータス変化
                                         outcomes.push({
                                             type: 'stat_change',
                                             p: attackerSide,
@@ -214,18 +230,6 @@ io.on('connection', (socket) => {
                                     }
                                 }
                             }
-                        }
-
-                        // ダメージの適用
-                        if (damage > 0 || move.power > 0) {
-                            target.currentHp = Math.max(0, target.currentHp - damage);
-                            if (target.currentHp <= 0) target.isFainted = true;
-
-                            outcomes.push({
-                                type: 'move', p: attackerSide, moveName: move.name, damage,
-                                resMult: resMult,
-                                targetP: targetSide, targetHp: target.currentHp, targetFainted: target.isFainted
-                            });
                         }
                     }
                 } else if (a.act.type === 'switch') {
