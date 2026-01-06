@@ -34,8 +34,7 @@
                 <div class="preview">
                     <h3>キャラクター保存</h3>
                     <div class="stat-box" id="stat-preview">
-                        <!-- ステータスがここに表示される -->
-                    </div>
+                        </div>
                     <input type="text" id="char-name" placeholder="キャラクター名を入力" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 15px; box-sizing: border-box;">
                     <button id="save-char-btn" class="primary-btn">キャラクターを保存</button>
                     
@@ -81,15 +80,17 @@
 
             <div id="battle-field" class="hidden">
                 <div class="battle-header">
-                    <div class="side-ui">
+                    <div class="side-ui left" id="p1-active-area">
                         <div id="p1-active-info"></div>
                         <div class="hp-container">
                             <div class="hp-bar"><div id="p1-fill" class="fill"></div></div>
                             <div class="hp-text">HP</div>
                         </div>
                     </div>
-                    <div style="font-size: 1.5rem; font-weight: 900; color: var(--text-muted); opacity: 0.3;">VS</div>
-                    <div class="side-ui right">
+                    
+                    <div class="vs-label">VS</div>
+                    
+                    <div class="side-ui right" id="p2-active-area">
                         <div id="p2-active-info"></div>
                         <div class="hp-container">
                             <div class="hp-bar"><div id="p2-hp-fill" class="fill"></div></div>

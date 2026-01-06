@@ -9,9 +9,11 @@ let selectedP1 = null;
 let selectedP2 = null;
 let battleState = {
     p1: [], p2: [],
-    p1ActiveIdx: 0, p2ActiveIdx: 0,
+    p1ActiveIdx: -1, p2ActiveIdx: -1,
     p1NextAction: null, p2NextAction: null,
-    isProcessing: false
+    isProcessing: false,
+    isSelectingInitial: false,
+    isForcedSwitch: null // 1 or 2
 };
 
 window.onload = async () => {
@@ -75,7 +77,6 @@ function setupEventListeners() {
     document.getElementById('start-battle-btn').onclick = startBattle;
 }
 
-// --- 共通UI処理 ---
 function showSection(id) {
     document.querySelectorAll('.panel').forEach(p => p.classList.add('hidden'));
     document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
@@ -111,7 +112,6 @@ function showDetail(item, type) {
     detailBox.innerHTML = html;
 }
 
-// --- ビルド画面 ---
 function renderBuildScreen() {
     renderTags();
     updateBuildPreview();
@@ -297,7 +297,6 @@ function deleteChar(id) {
     renderSavedChars();
 }
 
-// --- パーティ編成 ---
 function renderPartyScreen() {
     const cand = document.getElementById('party-char-candidates');
     cand.innerHTML = '';
@@ -354,7 +353,6 @@ function saveParty() {
     renderPartyScreen();
 }
 
-// --- バトルロジック ---
 function renderBattleSetup() {
     const p1div = document.getElementById('select-p1-party');
     const p2div = document.getElementById('select-p2-party');
@@ -387,44 +385,60 @@ function startBattle() {
     };
     battleState.p1 = selectedP1.members.map(initSet);
     battleState.p2 = selectedP2.members.map(initSet);
-    battleState.p1ActiveIdx = 0;
-    battleState.p2ActiveIdx = 0;
-    battleState.p1NextAction = null;
-    battleState.p2NextAction = null;
-    battleState.isProcessing = false;
+    
+    // 選出フェーズの初期化
+    battleState.p1ActiveIdx = -1;
+    battleState.p2ActiveIdx = -1;
+    battleState.isSelectingInitial = true;
+    battleState.isForcedSwitch = null;
 
-    document.getElementById('battle-log').innerHTML = "<div>バトル開始！</div>";
+    document.getElementById('battle-log').innerHTML = "<div>バトル開始！1体目のキャラを選んでください。</div>";
     updateBattleUI();
 }
 
 function updateBattleUI() {
-    const a1 = battleState.p1[battleState.p1ActiveIdx];
-    const a2 = battleState.p2[battleState.p2ActiveIdx];
+    const a1 = battleState.p1ActiveIdx !== -1 ? battleState.p1[battleState.p1ActiveIdx] : null;
+    const a2 = battleState.p2ActiveIdx !== -1 ? battleState.p2[battleState.p2ActiveIdx] : null;
 
     updateCharDisplay(1, a1);
     updateCharDisplay(2, a2);
 
-    renderActionPanel(1, a1, 'move-actions');
-    renderActionPanel(2, a2, 'switch-actions');
+    if (battleState.isSelectingInitial) {
+        renderSelectionPanel();
+    } else if (battleState.isForcedSwitch) {
+        renderSelectionPanel();
+    } else {
+        renderActionPanel(1, a1, 'move-actions');
+        renderActionPanel(2, a2, 'switch-actions');
+    }
 }
 
 function updateCharDisplay(pNum, char) {
     const prefix = pNum === 1 ? 'p1' : 'p2';
-    const nameEl = document.getElementById(`${prefix}-active-info`);
+    const infoEl = document.getElementById(`${prefix}-active-info`);
     const fillEl = document.getElementById(pNum === 1 ? 'p1-fill' : 'p2-hp-fill');
 
-    let resHtml = '<div class="resistance-grid">';
+    if (!char) {
+        infoEl.innerHTML = `<div class="char-name" style="color:var(--text-muted)">選出待機中...</div>`;
+        fillEl.style.width = `0%`;
+        return;
+    }
+
+    let resHtml = `<div class="resistance-grid ${pNum === 2 ? 'right' : ''}" style="margin-top: 8px;">`;
     Object.entries(char.resistances).forEach(([id, val]) => {
-        if (val !== 1.0) {
-            const name = getResName(parseInt(id));
-            resHtml += `<div class="res-item ${val < 1.0 ? 'res-resist' : 'res-weak'}">${name}</div>`;
-        }
+        const name = getResName(parseInt(id));
+        let cls = '';
+        if (val < 1.0) cls = 'res-resist';
+        else if (val > 1.0) cls = 'res-weak';
+        resHtml += `<div class="res-item ${cls}" style="font-size:0.65rem;">${name}:${Math.round(val * 100)}%</div>`;
     });
     resHtml += '</div>';
 
-    nameEl.innerHTML = `
+    infoEl.innerHTML = `
         <div class="char-name">${char.name}</div>
-        <div style="font-size:0.75rem; color:var(--text-muted);">SPD: ${char.battleSpd} / ATK: ${char.battleAtk}</div>
+        <div class="char-stats">
+            HP: ${Math.floor(char.currentHp)}/${char.maxHp} | ATK: ${Math.floor(char.battleAtk)} | SPD: ${Math.floor(char.battleSpd)}
+        </div>
         ${resHtml}
     `;
 
@@ -435,12 +449,81 @@ function updateCharDisplay(pNum, char) {
     else if (hpPercent < 50) fillEl.classList.add('warning');
 }
 
+function renderSelectionPanel() {
+    const moveCont = document.getElementById('move-actions');
+    const switchCont = document.getElementById('switch-actions');
+    
+    // 表示のリセット
+    moveCont.innerHTML = "";
+    switchCont.innerHTML = "";
+
+    // どちらのプレイヤーが選ぶべきか判定
+    let pNum = 1;
+    if (battleState.isSelectingInitial) {
+        pNum = battleState.p1ActiveIdx === -1 ? 1 : 2;
+    } else {
+        pNum = battleState.isForcedSwitch;
+    }
+
+    const container = pNum === 1 ? moveCont : switchCont;
+    container.innerHTML = `<h4>Player ${pNum} 出すキャラを選択</h4><div class="action-grid"></div>`;
+    const grid = container.querySelector('.action-grid');
+
+    const party = pNum === 1 ? battleState.p1 : battleState.p2;
+    party.forEach((c, idx) => {
+        if (!c.isFainted) {
+            const btn = document.createElement('button');
+            btn.className = 'action-btn';
+            btn.style.textAlign = 'left';
+            btn.style.height = 'auto';
+
+            let resSummary = '';
+            Object.entries(c.resistances).forEach(([id, val]) => {
+                if (val !== 1.0) {
+                    const name = getResName(parseInt(id)).charAt(0);
+                    resSummary += `<span style="color:${val < 1.0 ? 'var(--success)' : 'var(--danger)'}; margin-right:4px;">${name}${Math.round(val * 100)}</span>`;
+                }
+            });
+
+            btn.innerHTML = `
+                <div style="font-weight:bold; font-size:0.8rem;">${c.name}</div>
+                <div style="font-size:0.7rem; color:var(--text-muted);">H:${Math.floor(c.currentHp)} A:${c.battleAtk} S:${c.battleSpd}</div>
+                <div style="font-size:0.6rem; margin-top:2px;">${resSummary}</div>
+            `;
+
+            btn.onclick = () => selectCharacter(pNum, idx);
+            grid.appendChild(btn);
+        }
+    });
+}
+
+function selectCharacter(pNum, idx) {
+    const party = pNum === 1 ? battleState.p1 : battleState.p2;
+    
+    if (battleState.isSelectingInitial) {
+        if (pNum === 1) battleState.p1ActiveIdx = idx;
+        else {
+            battleState.p2ActiveIdx = idx;
+            battleState.isSelectingInitial = false;
+        }
+        log(`P${pNum}: ${party[idx].name}を繰り出した！`);
+    } else if (battleState.isForcedSwitch) {
+        if (pNum === 1) battleState.p1ActiveIdx = idx;
+        else battleState.p2ActiveIdx = idx;
+        
+        log(`P${pNum}: 交代して ${party[idx].name}を繰り出した！`);
+        battleState.isForcedSwitch = null;
+    }
+    
+    updateBattleUI();
+}
+
 function renderActionPanel(pNum, char, containerId) {
     const cont = document.getElementById(containerId);
     cont.innerHTML = `<h4>Player ${pNum} の選択</h4><div class="action-grid"></div>`;
     const grid = cont.querySelector('.action-grid');
 
-    if (battleState.isProcessing) return;
+    if (battleState.isProcessing || battleState.isForcedSwitch) return;
 
     char.moves.forEach(m => {
         const btn = document.createElement('button');
@@ -462,8 +545,25 @@ function renderActionPanel(pNum, char, containerId) {
     party.forEach((c, idx) => {
         if (idx !== (pNum === 1 ? battleState.p1ActiveIdx : battleState.p2ActiveIdx) && !c.isFainted) {
             const btn = document.createElement('button');
-            btn.textContent = `交代:${c.name}`;
             btn.className = 'action-btn switch';
+            btn.style.textAlign = 'left';
+            btn.style.height = 'auto';
+            btn.style.padding = '8px';
+
+            let resSummary = '';
+            Object.entries(c.resistances).forEach(([id, val]) => {
+                if (val !== 1.0) {
+                    const name = getResName(parseInt(id)).charAt(0);
+                    resSummary += `<span style="color:${val < 1.0 ? 'var(--success)' : 'var(--danger)'}; margin-right:4px;">${name}${Math.round(val * 100)}</span>`;
+                }
+            });
+
+            btn.innerHTML = `
+                <div style="font-weight:bold; font-size:0.8rem;">交代:${c.name}</div>
+                <div style="font-size:0.7rem; color:var(--text-muted);">H:${Math.floor(c.currentHp)} A:${c.battleAtk} S:${c.battleSpd}</div>
+                <div style="font-size:0.6rem; margin-top:2px;">${resSummary}</div>
+            `;
+
             btn.onclick = () => {
                 if (pNum === 1) battleState.p1NextAction = { type: 'switch', index: idx };
                 else battleState.p2NextAction = { type: 'switch', index: idx };
@@ -509,12 +609,14 @@ async function processTurn() {
             log(`P${a.p}: ${prevName}を戻して ${party[a.act.index].name}を繰り出した！`);
         } else {
             const attacker = a.char;
-            const target = a.p === 1 ? battleState.p2[battleState.p2ActiveIdx] : battleState.p1[battleState.p1ActiveIdx];
-            const targetPrefix = a.p === 1 ? 'p2' : 'p1';
+            const targetSideNum = a.p === 1 ? 2 : 1;
+            const targetIdx = targetSideNum === 1 ? battleState.p1ActiveIdx : battleState.p2ActiveIdx;
+            const target = targetSideNum === 1 ? battleState.p1[targetIdx] : battleState.p2[targetIdx];
+            const targetSideId = a.p === 1 ? 'p2-active-area' : 'p1-active-area';
 
             log(`P${a.p}: ${attacker.name}の ${a.act.move.name}！`);
 
-            const targetEl = document.querySelector(`.${targetPrefix === 'p1' ? 'side-ui:first-child' : 'side-ui:last-child'}`);
+            const targetEl = document.getElementById(targetSideId);
             targetEl.classList.add('shake', 'flash');
             setTimeout(() => targetEl.classList.remove('shake', 'flash'), 500);
 
@@ -526,7 +628,6 @@ async function processTurn() {
                 if (resMult > 1.0) log("効果は抜群だ！");
                 if (resMult < 1.0) log("効果はいまひとつのようだ...");
             }
-
 
             target.currentHp = Math.max(0, target.currentHp - damage);
 
@@ -554,16 +655,23 @@ async function processTurn() {
             if (target.currentHp <= 0) {
                 target.isFainted = true;
                 log(`${target.name}は倒れた！`);
-                const party = a.p === 1 ? battleState.p2 : battleState.p1;
-                const next = party.findIndex(c => !c.isFainted);
-                if (next !== -1) {
-                    if (a.p === 1) battleState.p2ActiveIdx = next; else battleState.p1ActiveIdx = next;
-                    log(`P${a.p === 1 ? 2 : 1}: ${party[next].name}が登場！`);
-                } else {
-                    log(`P${a.p === 1 ? 2 : 1}の全滅！ P${a.p}の勝利！`);
+                
+                const party = targetSideNum === 1 ? battleState.p1 : battleState.p2;
+                const hasSurvivor = party.some(c => !c.isFainted);
+                
+                if (!hasSurvivor) {
+                    log(`P${targetSideNum}の全滅！ P${a.p}の勝利！`);
                     battleState.isProcessing = false;
                     updateBattleUI();
                     return;
+                } else {
+                    // 交代先選択フラグを立てて、ターン処理を中断
+                    battleState.isForcedSwitch = targetSideNum;
+                    battleState.p1NextAction = null;
+                    battleState.p2NextAction = null;
+                    battleState.isProcessing = false;
+                    updateBattleUI();
+                    return; 
                 }
             }
         }
