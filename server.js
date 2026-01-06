@@ -133,6 +133,25 @@ io.on('connection', (socket) => {
         const p1NeedsSwitch = p1Active.isFainted;
         const p2NeedsSwitch = p2Active.isFainted;
 
+        if (action.type === 'switch' && !room.isResolving) {
+            if (role === 1) {
+                room.p1ActiveIdx = action.index;
+            } else {
+                room.p2ActiveIdx = action.index;
+            }
+            const activeChar = (role === 1 ? room.p1Party : room.p2Party)[action.index];
+            io.to(roomId).emit('forced_switch_reveal', { 
+                role, 
+                index: action.index, 
+                activeChar: activeChar 
+            });
+            
+            // アクションをリセットして次のターンの入力を待つ
+            if (role === 1) room.p1Action = null;
+            else room.p2Action = null;
+            return; 
+        }
+
         // 双方が必要な入力を終えたかチェック
         if (room.p1Action && room.p2Action) {
             const outcomes = [];

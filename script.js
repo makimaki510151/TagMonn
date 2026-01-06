@@ -60,14 +60,14 @@ function showBattleModeSelect() {
     // ただし showSection 内で showBattleModeSelect を呼んでいるため、フラグで制御
     if (window._isShowingBattleMode) return;
     window._isShowingBattleMode = true;
-    
+
     showSection('battle');
-    
+
     document.getElementById('battle-mode-select').classList.remove('hidden');
     document.getElementById('battle-setup').classList.add('hidden');
     document.getElementById('battle-field').classList.add('hidden');
     document.getElementById('online-section').classList.add('hidden');
-    
+
     window._isShowingBattleMode = false;
 }
 
@@ -80,13 +80,13 @@ function showBattleSetup(mode) {
         // オンライン対戦の場合、battle-sectionを表示したまま、その中の要素を制御
         document.getElementById('battle-section').classList.remove('hidden');
         document.getElementById('online-section').classList.remove('hidden');
-        
+
         // オンラインセクション内の初期表示をリセット
         document.getElementById('online-login').classList.remove('hidden');
         document.getElementById('online-lobby').classList.add('hidden');
         document.getElementById('online-regulation').classList.add('hidden');
         document.getElementById('online-party-select').classList.add('hidden');
-        
+
         checkServerStatus();
     }
 }
@@ -170,7 +170,7 @@ function showSection(id) {
         const isBattleFieldVisible = !document.getElementById('battle-field').classList.contains('hidden');
         const isBattleSetupVisible = !document.getElementById('battle-setup').classList.contains('hidden');
         const isOnlineSectionVisible = !document.getElementById('online-section').classList.contains('hidden');
-        
+
         if (!battleState.isProcessing && !isBattleFieldVisible && !isBattleSetupVisible && !isOnlineSectionVisible) {
             showBattleModeSelect();
         }
@@ -798,7 +798,7 @@ async function processTurn() {
             const party = a.p === 1 ? battleState.p1 : battleState.p2;
             const prevIdx = a.p === 1 ? battleState.p1ActiveIdx : battleState.p2ActiveIdx;
             const prevName = party[prevIdx] ? party[prevIdx].name : "???";
-            
+
             if (a.p === 1) battleState.p1ActiveIdx = a.act.index;
             else battleState.p2ActiveIdx = a.act.index;
             log(`P${a.p}: ${prevName}を戻して ${party[a.act.index].name}を繰り出した！`);
@@ -892,13 +892,13 @@ async function processOnlineTurn(outcomes) {
             // 死に出し同期
             const p1c = battleState.p1[res.p1Idx];
             const p2c = battleState.p2[res.p2Idx];
-            
+
             // 相手キャラの情報を最新化
             const targetSide = onlineState.role === 1 ? 2 : 1;
             const targetIdx = targetSide === 1 ? res.p1Idx : res.p2Idx;
             const targetChar = targetSide === 1 ? res.p1Char : res.p2Char;
             const party = targetSide === 1 ? battleState.p1 : battleState.p2;
-            
+
             party[targetIdx] = {
                 ...targetChar,
                 battleSpd: targetChar.baseStats.spd,
@@ -949,7 +949,7 @@ async function processOnlineTurn(outcomes) {
             if (res.targetFainted) {
                 target.isFainted = true;
                 log(`${target.name}は倒れた！`);
-                
+
                 const hasSurvivor = targetParty.some(c => c && !c.isFainted);
                 if (!hasSurvivor) {
                     log(`P${res.targetP}の全滅！ P${res.p}の勝利！`);
@@ -1088,7 +1088,7 @@ function connectOnline() {
         });
 
         // パーティリストの描画（レギュレーションに合うものだけ表示）
-        window.renderOnlinePartyList = function() {
+        window.renderOnlinePartyList = function () {
             const list = document.getElementById('online-party-list');
             const validParties = myParties.filter(p => p.members.length === onlineState.partyLimit);
 
@@ -1112,7 +1112,7 @@ function connectOnline() {
             // バトル画面へ移行
             document.getElementById('online-party-select').classList.add('hidden');
             document.getElementById('online-section').classList.add('hidden');
-            
+
             showSection('battle');
             document.getElementById('battle-mode-select').classList.add('hidden');
             document.getElementById('battle-setup').classList.add('hidden');
@@ -1122,14 +1122,14 @@ function connectOnline() {
         });
 
         // グローバルに関数を公開
-        window.acceptRegulation = function() {
+        window.acceptRegulation = function () {
             socket.emit('accept_regulation', { roomId: onlineState.roomId });
         };
 
-        window.submitOnlineParty = function(partyId) {
+        window.submitOnlineParty = function (partyId) {
             const party = myParties.find(p => p.id === partyId);
             if (!party) return;
-            
+
             const selectedMembers = party.members.slice(0, onlineState.partyLimit);
 
             const initSet = (m) => ({
@@ -1147,12 +1147,12 @@ function connectOnline() {
                 battleState.p2 = selectedMembers.map(initSet);
             }
 
-            socket.emit('submit_party', { 
-                roomId: onlineState.roomId, 
-                role: onlineState.role, 
-                partyData: selectedMembers 
+            socket.emit('submit_party', {
+                roomId: onlineState.roomId,
+                role: onlineState.role,
+                partyData: selectedMembers
             });
-            
+
             document.getElementById('online-party-select').innerHTML = `<h3>送信完了</h3><p>相手の選択を待っています...</p>`;
         };
 
@@ -1167,7 +1167,7 @@ function connectOnline() {
             });
 
             const dummyParty = Array(oppPartySize).fill(null).map(() => ({ name: "???", isFainted: false, currentHp: 1, maxHp: 1, resistances: {}, moves: [], baseStats: { hp: 1, atk: 1, spd: 1 } }));
-            
+
             if (onlineState.role === 1) {
                 battleState.p2 = dummyParty;
                 battleState.p2[oppIndex] = initSet(oppActiveChar);
@@ -1192,6 +1192,31 @@ function connectOnline() {
 
         socket.on('resolve_turn', ({ outcomes }) => {
             processOnlineTurn(outcomes);
+        });
+
+        socket.on('forced_switch_reveal', ({ role, index, activeChar }) => {
+            // 待機画面を消す
+            const overlay = document.getElementById('waiting-overlay');
+            if (overlay) overlay.classList.add('hidden');
+
+            if (onlineState.role === role) {
+                // 自分の交代の場合
+                if (role === 1) battleState.p1ActiveIdx = index;
+                else battleState.p2ActiveIdx = index;
+            } else {
+                // 相手の交代の場合
+                if (role === 1) {
+                    battleState.p1ActiveIdx = index;
+                    battleState.p1[index] = activeChar;
+                } else {
+                    battleState.p2ActiveIdx = index;
+                    battleState.p2[index] = activeChar;
+                }
+            }
+
+            battleState.isForcedSwitch = null;
+            log(`${role === onlineState.role ? "あなた" : onlineState.opponentName} は ${activeChar.name} を繰り出した！`);
+            updateBattleUI();
         });
 
         socket.on('opponent_left', () => {
