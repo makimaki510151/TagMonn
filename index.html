@@ -15,6 +15,7 @@
         <nav>
             <button onclick="showSection('build')">キャラクタービルド</button>
             <button onclick="showSection('party')">パーティ編成</button>
+            <button onclick="showSection('story')">ストーリー</button>
             <button onclick="showSection('battle')">対戦</button>
         </nav>
     </header>
@@ -23,6 +24,21 @@
         <div id="detail-display">
             タグや技を選択・マウスオーバーすると、ここに詳細が表示されます。
         </div>
+
+        <section id="story-section" class="panel hidden">
+            <div id="story-list-view">
+                <h3>ストーリーモード</h3>
+                <p>ステージを選択してバトルに挑みましょう。</p>
+                <div id="story-stage-list" class="saved-area" style="height: auto; max-height: 400px;"></div>
+            </div>
+            <div id="story-dialogue-view" class="hidden">
+                <div class="stat-box" style="min-height: 200px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;">
+                    <h2 id="story-dialogue-title" style="color: var(--primary); margin-bottom: 20px;"></h2>
+                    <p id="story-dialogue-text" style="font-size: 1.2rem; line-height: 1.8; margin-bottom: 30px;"></p>
+                    <button id="story-dialogue-btn" class="primary-btn" style="width: auto; padding: 12px 40px;">次へ</button>
+                </div>
+            </div>
+        </section>
 
         <section id="build-section" class="panel">
             <div class="column-layout">

@@ -1,4 +1,4 @@
-let gameData = { resistances: [], tags: [], moves: [] };
+let gameData = { resistances: [], tags: [], moves: [], story_stages: [] };
 let myChars = JSON.parse(localStorage.getItem('tm_chars') || '[]');
 let myParties = JSON.parse(localStorage.getItem('tm_parties') || '[]');
 
@@ -13,7 +13,9 @@ let battleState = {
     p1NextAction: null, p2NextAction: null,
     isProcessing: false,
     isSelectingInitial: false,
-    isForcedSwitch: null // 1 or 2
+    isForcedSwitch: null, // 1 or 2
+    isStoryMode: false,
+    currentStage: null
 };
 
 // オンライン用変数
@@ -219,6 +221,7 @@ function showSection(id) {
 
     if (id === 'build') renderBuildScreen();
     if (id === 'party') renderPartyScreen();
+    if (id === 'story') renderStoryScreen();
     if (id === 'battle') {
         // 対戦タブが押された時は、対戦中・準備中・オンラインロビー中ならそのまま、そうでなければモード選択を表示
         const isBattleFieldVisible = !document.getElementById('battle-field').classList.contains('hidden');
@@ -227,6 +230,13 @@ function showSection(id) {
 
         if (!battleState.isProcessing && !isBattleFieldVisible && !isBattleSetupVisible && !isOnlineSectionVisible) {
             showBattleModeSelect();
+        }
+    } else {
+        // バトル以外のセクションに移動した際、ストーリーモード中ならフラグを折る（ただし対戦中を除く）
+        if (!document.getElementById('battle-field').classList.contains('hidden')) {
+            // バトル画面が表示されている間は何もしない
+        } else {
+            battleState.isStoryMode = false;
         }
     }
 }
@@ -261,7 +271,18 @@ function renderTags() {
     const container = document.getElementById('tag-container');
     if (!container) return;
     container.innerHTML = '';
+
+    // ストーリー報酬などで解放されたタグのみ表示（初期タグは全て表示、それ以外はlocalStorageを確認）
+    const unlockedTags = JSON.parse(localStorage.getItem('tm_unlocked_tags') || '[]');
+    
     gameData.tags.forEach(tag => {
+        // IDが200未満は初期タグ、それ以上は報酬タグとする（または全て表示する既存仕様を維持しつつ、特定のタグをロックする仕組みも可能）
+        // 今回は「使用可能リストに追加」という要件に基づき、未解禁の報酬タグ（ID>115など）をフィルタリングする例
+        const isInitialTag = tag.id <= 115;
+        const isUnlocked = unlockedTags.includes(tag.id);
+        
+        if (!isInitialTag && !isUnlocked) return;
+
         const btn = document.createElement('button');
         const isActive = currentBuild.tags.some(t => t.id === tag.id);
         btn.className = `tag-btn ${isActive ? 'active' : ''}`;
@@ -627,7 +648,7 @@ function renderSelectionPanel() {
         return;
     }
 
-    // 以下ローカル用ロジック
+    // 以下ローカル・ストーリー用ロジック
     let pNum = 1;
     if (battleState.isSelectingInitial) {
         pNum = battleState.p1ActiveIdx === -1 ? 1 : 2;
@@ -635,8 +656,13 @@ function renderSelectionPanel() {
         pNum = battleState.isForcedSwitch;
     }
 
+    if (battleState.isStoryMode && pNum === 2) {
+        // NPCの交代は自動で行われるため、パネルを表示しない
+        return;
+    }
+
     const container = pNum === 1 ? moveCont : switchCont;
-    container.innerHTML = `<h4>Player ${pNum} 出すキャラを選択</h4><div class="action-grid"></div>`;
+    container.innerHTML = `<h4>${battleState.isStoryMode ? 'あなた' : 'Player ' + pNum} 出すキャラを選択</h4><div class="action-grid"></div>`;
     const grid = container.querySelector('.action-grid');
     generateSelectionButtons(pNum, grid);
 }
@@ -731,13 +757,19 @@ function selectCharacter(pNum, idx) {
 function renderActionPanel(pNum, char, containerId) {
     const cont = document.getElementById(containerId);
 
-    // オンラインの場合、自分以外のコントロールは非表示
+    // オンラインまたはストーリーモードの場合、自分以外のコントロールは非表示
     if (onlineState.isOnlineBattle) {
         if (onlineState.role !== pNum) {
             cont.innerHTML = ``;
             return;
         }
         cont.innerHTML = `<h4>あなた(${pNum}) の選択</h4><div class="action-grid"></div>`;
+    } else if (battleState.isStoryMode) {
+        if (pNum === 2) {
+            cont.innerHTML = ``;
+            return;
+        }
+        cont.innerHTML = `<h4>あなたの選択</h4><div class="action-grid"></div>`;
     } else {
         cont.innerHTML = `<h4>Player ${pNum} の選択</h4><div class="action-grid"></div>`;
     }
@@ -824,7 +856,34 @@ function handleAction(pNum, action) {
         // ローカル
         if (pNum === 1) battleState.p1NextAction = action;
         else battleState.p2NextAction = action;
+
+        if (battleState.isStoryMode && pNum === 1) {
+            // NPCの行動を決定
+            battleState.p2NextAction = decideNPCAction();
+        }
+        
         checkTurnReady();
+    }
+}
+
+function decideNPCAction() {
+    const npcChar = battleState.p2[battleState.p2ActiveIdx];
+    
+    // 死に出し（強制交代）の場合
+    if (battleState.isForcedSwitch === 2) {
+        const nextIdx = battleState.p2.findIndex(c => !c.isFainted);
+        return { type: 'switch', index: nextIdx };
+    }
+
+    // 通常ターン：威力が最も高い技を選択（ランダム性も加味）
+    const moves = npcChar.moves.filter(m => m.power > 0);
+    if (moves.length > 0) {
+        // 威力順にソートして、一番強いものを選ぶ（またはランダム）
+        const bestMove = moves.reduce((prev, current) => (prev.power > current.power) ? prev : current);
+        return { type: 'move', move: bestMove };
+    } else {
+        // 攻撃技がない場合は最初の技
+        return { type: 'move', move: npcChar.moves[0] };
     }
 }
 
@@ -920,12 +979,31 @@ async function processTurn() {
                     battleState.isProcessing = false;
                     updateBattleUI();
                     if (onlineState.isOnlineBattle) document.getElementById('online-back-btn').classList.remove('hidden');
+                    
+                    if (battleState.isStoryMode) {
+                        if (a.p === 1) {
+                            // プレイヤー勝利
+                            setTimeout(() => finishStoryStage(true), 1500);
+                        } else {
+                            // プレイヤー敗北
+                            setTimeout(() => finishStoryStage(false), 1500);
+                        }
+                    }
                     return;
                 } else {
                     // 交代先選択フラグ
                     battleState.isForcedSwitch = targetSideNum;
+
+                    if (battleState.isStoryMode && targetSideNum === 2) {
+                        // NPCの死に出しを自動決定
+                        battleState.p2NextAction = decideNPCAction();
+                        // プレイヤーの入力を待つ必要がないので、そのまま進行させる
+                        // ただし、プレイヤーが倒れた場合はプレイヤーの入力を待つ
+                    }
+
                     battleState.p1NextAction = null;
-                    battleState.p2NextAction = null;
+                    if (!battleState.isStoryMode) battleState.p2NextAction = null;
+                    
                     battleState.isProcessing = false;
                     updateBattleUI();
                     return;
@@ -1459,4 +1537,129 @@ function returnToLobby() {
         showSection('battle');
         showBattleModeSelect();
     }
+}
+// ----------------------------------------------------
+// ストーリーモード用関数群
+// ----------------------------------------------------
+
+function renderStoryScreen() {
+    const list = document.getElementById('story-stage-list');
+    if (!list) return;
+    list.innerHTML = '';
+
+    gameData.story_stages.forEach(stage => {
+        const div = document.createElement('div');
+        div.className = 'stage-card';
+        div.innerHTML = `
+            <div class="stage-info">
+                <h4>${stage.title}</h4>
+                <p>報酬: ${gameData.tags.find(t => t.id === stage.rewardTagId).name}</p>
+            </div>
+            <button class="primary-btn" style="width: auto; padding: 8px 20px;" onclick="startStoryDialogue(${stage.id})">挑戦する</button>
+        `;
+        list.appendChild(div);
+    });
+
+    document.getElementById('story-list-view').classList.remove('hidden');
+    document.getElementById('story-dialogue-view').classList.add('hidden');
+}
+
+function startStoryDialogue(stageId) {
+    const stage = gameData.story_stages.find(s => s.id === stageId);
+    battleState.currentStage = stage;
+
+    document.getElementById('story-list-view').classList.add('hidden');
+    document.getElementById('story-dialogue-view').classList.remove('hidden');
+
+    document.getElementById('story-dialogue-title').textContent = stage.title;
+    document.getElementById('story-dialogue-text').textContent = stage.introText;
+    
+    const btn = document.getElementById('story-dialogue-btn');
+    btn.textContent = "バトル開始";
+    btn.onclick = () => prepareStoryBattle(stage);
+}
+
+function prepareStoryBattle(stage) {
+    // プレイヤーのパーティ選択（最新のものを自動選択、または警告）
+    if (myParties.length === 0) {
+        alert("まずは「パーティ編成」でパーティを作成してください。");
+        showSection('party');
+        return;
+    }
+
+    const playerParty = myParties[0]; // 最初のパーティを使用
+    
+    const initSet = (m) => ({
+        ...m,
+        maxHp: m.baseStats.hp,
+        currentHp: m.baseStats.hp,
+        battleSpd: m.baseStats.spd,
+        battleAtk: m.baseStats.atk,
+        isFainted: false
+    });
+
+    battleState.p1 = playerParty.members.map(initSet);
+    
+    // NPCパーティの構築
+    battleState.p2 = stage.enemyParty.map(enemy => {
+        const tags = enemy.tags.map(tid => gameData.tags.find(t => t.id === tid));
+        const moves = enemy.moves.map(mid => gameData.moves.find(m => m.id === mid));
+        const baseStats = calculateStats(tags);
+        const resistances = calculateResistances(tags);
+        return initSet({
+            name: enemy.name,
+            tags,
+            moves,
+            baseStats,
+            resistances
+        });
+    });
+
+    battleState.p1ActiveIdx = 0;
+    battleState.p2ActiveIdx = 0;
+    battleState.isSelectingInitial = false; // ストーリーモードでは初期選出は固定（0番目）
+    battleState.isStoryMode = true;
+    battleState.isProcessing = false;
+    battleState.isForcedSwitch = null;
+    battleState.p1NextAction = null;
+    battleState.p2NextAction = null;
+
+    showSection('battle');
+    document.getElementById('battle-mode-select').classList.add('hidden');
+    document.getElementById('battle-setup').classList.add('hidden');
+    document.getElementById('battle-field').classList.remove('hidden');
+    document.getElementById('online-back-btn').classList.add('hidden');
+
+    document.getElementById('battle-log').innerHTML = '';
+    log(`ストーリーバトル: ${stage.title} 開始！`);
+    updateBattleUI();
+}
+
+function finishStoryStage(isWin) {
+    const stage = battleState.currentStage;
+    
+    showSection('story');
+    document.getElementById('story-list-view').classList.add('hidden');
+    document.getElementById('story-dialogue-view').classList.remove('hidden');
+
+    if (isWin) {
+        document.getElementById('story-dialogue-text').textContent = stage.clearText;
+        
+        // 報酬の付与
+        const unlockedTags = JSON.parse(localStorage.getItem('tm_unlocked_tags') || '[]');
+        if (!unlockedTags.includes(stage.rewardTagId)) {
+            unlockedTags.push(stage.rewardTagId);
+            localStorage.setItem('tm_unlocked_tags', JSON.stringify(unlockedTags));
+            log(`報酬タグ「${gameData.tags.find(t => t.id === stage.rewardTagId).name}」を獲得しました！`);
+        }
+    } else {
+        document.getElementById('story-dialogue-text').textContent = "「残念だったな。修行し直してまた来い！」";
+    }
+
+    const btn = document.getElementById('story-dialogue-btn');
+    btn.textContent = "戻る";
+    btn.onclick = () => {
+        battleState.isStoryMode = false;
+        renderStoryScreen();
+    };
 }

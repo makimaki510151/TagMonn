@@ -235,6 +235,24 @@ h3 { margin-top: 0; margin-bottom: 15px; font-size: 1.1rem; border-left: 4px sol
     border-radius: 8px; margin-bottom: 10px;
     display: flex; justify-content: space-between; align-items: center;
 }
+
+.stage-card {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 15px;
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: transform 0.2s;
+}
+.stage-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--primary);
+}
+.stage-info h4 { margin: 0 0 5px 0; color: var(--primary-dark); }
+.stage-info p { margin: 0; font-size: 0.85rem; color: var(--text-muted); }
 #waiting-overlay {
     position: absolute; top: 0; left: 0; right: 0; bottom: 0;
     background: rgba(255,255,255,0.8); z-index: 50;
