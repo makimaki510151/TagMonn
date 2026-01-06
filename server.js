@@ -6,7 +6,7 @@ const app = express();
 const server = http.createServer(app);
 const io = require('socket.io')(server, {
   cors: {
-    origin: "https://makimaki510151.github.io/TagMonn/", // 通信を許可するURL
+    origin: "https://makimaki510151.github.io", // 通信を許可するURL
     methods: ["GET", "POST"]
   }
 });
