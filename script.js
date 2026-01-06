@@ -452,23 +452,38 @@ function updateCharDisplay(pNum, char) {
         return;
     }
 
-    let resHtml = `<div class="resistance-grid ${pNum === 2 ? 'right' : ''}" style="margin-top: 8px;">`;
-    Object.entries(char.resistances).forEach(([id, val]) => {
-        const name = getResName(parseInt(id));
-        let cls = '';
-        if (val < 1.0) cls = 'res-resist';
-        else if (val > 1.0) cls = 'res-weak';
-        resHtml += `<div class="res-item ${cls}" style="font-size:0.65rem;">${name}:${Math.round(val * 100)}%</div>`;
-    });
-    resHtml += '</div>';
+    // オンライン対戦かつ相手のキャラを表示する場合、情報を制限する
+    const isOpponent = onlineState.isOnlineBattle && onlineState.role !== pNum;
 
-    infoEl.innerHTML = `
-        <div class="char-name">${char.name}</div>
-        <div class="char-stats">
-            HP: ${Math.floor(char.currentHp)}/${char.maxHp} | ATK: ${Math.floor(char.battleAtk)} | SPD: ${Math.floor(char.battleSpd)}
-        </div>
-        ${resHtml}
-    `;
+    let resHtml = '';
+    if (!isOpponent) {
+        resHtml = `<div class="resistance-grid ${pNum === 2 ? 'right' : ''}" style="margin-top: 8px;">`;
+        Object.entries(char.resistances).forEach(([id, val]) => {
+            const name = getResName(parseInt(id));
+            let cls = '';
+            if (val < 1.0) cls = 'res-resist';
+            else if (val > 1.0) cls = 'res-weak';
+            resHtml += `<div class="res-item ${cls}" style="font-size:0.65rem;">${name}:${Math.round(val * 100)}%</div>`;
+        });
+        resHtml += '</div>';
+    }
+
+    if (isOpponent) {
+        infoEl.innerHTML = `
+            <div class="char-name">${char.name}</div>
+            <div class="char-stats">
+                HP: ${Math.floor(char.currentHp)}/${char.maxHp}
+            </div>
+        `;
+    } else {
+        infoEl.innerHTML = `
+            <div class="char-name">${char.name}</div>
+            <div class="char-stats">
+                HP: ${Math.floor(char.currentHp)}/${char.maxHp} | ATK: ${Math.floor(char.battleAtk)} | SPD: ${Math.floor(char.battleSpd)}
+            </div>
+            ${resHtml}
+        `;
+    }
 
     const hpPercent = (char.currentHp / char.maxHp) * 100;
     fillEl.style.width = `${hpPercent}%`;
@@ -712,7 +727,23 @@ async function processTurn() {
         if (a.act.type === 'switch') {
             const party = a.p === 1 ? battleState.p1 : battleState.p2;
             const prevIdx = a.p === 1 ? battleState.p1ActiveIdx : battleState.p2ActiveIdx;
-            const prevName = party[prevIdx].name;
+            const prevName = party[prevIdx] ? party[prevIdx].name : "???";
+            
+            // オンライン対戦で相手が交代した場合、そのキャラの情報を更新する必要がある
+            if (onlineState.isOnlineBattle && a.p !== onlineState.role) {
+                // サーバーから送られてくるアクションにキャラ詳細を含めるように server.js も修正が必要
+                if (a.act.charDetails) {
+                    party[a.act.index] = {
+                        ...a.act.charDetails,
+                        maxHp: a.act.charDetails.baseStats.hp,
+                        currentHp: a.act.charDetails.currentHp || a.act.charDetails.baseStats.hp,
+                        battleSpd: a.act.charDetails.baseStats.spd,
+                        battleAtk: a.act.charDetails.baseStats.atk,
+                        isFainted: false
+                    };
+                }
+            }
+
             if (a.p === 1) battleState.p1ActiveIdx = a.act.index;
             else battleState.p2ActiveIdx = a.act.index;
             log(`P${a.p}: ${prevName}を戻して ${party[a.act.index].name}を繰り出した！`);
@@ -881,7 +912,7 @@ function connectOnline() {
                 regStatus.innerHTML = `${partySize} on ${partySize} を提案中。相手の承認を待っています...`;
             } else {
                 // 相手が提案した場合は承認ボタンを表示
-                regStatus.innerHTML = `相手が ${partySize} on ${partySize} を提案しました。 <button class="primary-btn" onclick="acceptRegulation()">承認する</button>`;
+                regStatus.innerHTML = `相手が ${partySize} on ${partySize} を提案しました。 <button class="primary-btn" onclick="window.acceptRegulation()">承認する</button>`;
             }
         });
 
@@ -917,45 +948,14 @@ function connectOnline() {
             list.innerHTML = validParties.map(p => `
         <div class="player-row">
             <span>${p.name} (メンバー: ${p.members.length}体)</span>
-            <button class="primary-btn" onclick="submitOnlineParty(${p.id})">選択</button>
+            <button class="primary-btn" onclick="window.submitOnlineParty(${p.id})">選択</button>
         </div>
     `).join('');
         }
 
-        // 承認ボタンの動作
-        function acceptRegulation() {
-            socket.emit('accept_regulation', { roomId: onlineState.roomId });
-        }
+        // 承認ボタンの動作 (内部関数を削除し、グローバルに定義)
+        // パーティ送信 (内部関数を削除し、グローバルに定義)
 
-        // パーティ送信
-        function submitOnlineParty(partyId) {
-            const party = myParties.find(p => p.id === partyId);
-            if (!party) return;
-
-            const initSet = (m) => ({
-                ...m,
-                maxHp: m.baseStats.hp,
-                currentHp: m.baseStats.hp,
-                battleSpd: m.baseStats.spd,
-                battleAtk: m.baseStats.atk,
-                isFainted: false
-            });
-
-            // 自分の役割に合わせてバトル状態を初期化
-            if (onlineState.role === 1) {
-                battleState.p1 = party.members.map(initSet);
-            } else {
-                battleState.p2 = party.members.map(initSet);
-            }
-
-            socket.emit('submit_party', {
-                roomId: onlineState.roomId,
-                partyData: party.members,
-                role: onlineState.role
-            });
-
-            document.getElementById('online-party-list').innerHTML = "<div>相手の選択を待っています...</div>";
-        }
 
         socket.on('battle_ready_selection', ({ opponentPartySize }) => {
             // バトル画面へ移行
@@ -966,8 +966,8 @@ function connectOnline() {
             startOnlineBattle(opponentPartySize);
         });
 
-        socket.on('initial_pick_reveal', ({ myIndex, oppIndex, oppParty }) => {
-            // 相手パーティ情報を受信して更新
+        socket.on('initial_pick_reveal', ({ myIndex, oppIndex, oppActiveChar, oppPartySize }) => {
+            // 相手パーティ情報を受信して更新 (最初は出ているキャラのみ)
             const initSet = (m) => ({
                 ...m,
                 maxHp: m.baseStats.hp,
@@ -977,9 +977,16 @@ function connectOnline() {
                 isFainted: false
             });
 
-            // 相手パーティをセット
-            if (onlineState.role === 1) battleState.p2 = oppParty.map(initSet);
-            else battleState.p1 = oppParty.map(initSet);
+            // 相手パーティをダミーで初期化し、アクティブなキャラだけセット
+            const dummyParty = Array(oppPartySize).fill(null).map(() => ({ name: "???", isFainted: false, currentHp: 1, maxHp: 1, resistances: {}, moves: [], baseStats: { hp: 1, atk: 1, spd: 1 } }));
+            
+            if (onlineState.role === 1) {
+                battleState.p2 = dummyParty;
+                battleState.p2[oppIndex] = initSet(oppActiveChar);
+            } else {
+                battleState.p1 = dummyParty;
+                battleState.p1[oppIndex] = initSet(oppActiveChar);
+            }
 
             document.getElementById('waiting-overlay').classList.add('hidden');
 
@@ -1048,9 +1055,40 @@ function sendRegulation(size) {
     document.getElementById('reg-status').textContent = `${size} on ${size} を提案中...`;
 }
 
-function acceptRegulation(size) {
-    onlineState.partyLimit = size;
+window.acceptRegulation = function() {
     socket.emit('accept_regulation', { roomId: onlineState.roomId });
+};
+
+window.submitOnlineParty = function(partyId) {
+    const party = myParties.find(p => p.id === partyId);
+    if (!party) return;
+
+    // レギュレーションの数に合わせてメンバーを制限（先頭から抽出）
+    const selectedMembers = party.members.slice(0, onlineState.partyLimit);
+
+    const initSet = (m) => ({
+        ...m,
+        maxHp: m.baseStats.hp,
+        currentHp: m.baseStats.hp,
+        battleSpd: m.baseStats.spd,
+        battleAtk: m.baseStats.atk,
+        isFainted: false
+    });
+
+    // 自分の役割に合わせてバトル状態を初期化
+    if (onlineState.role === 1) {
+        battleState.p1 = selectedMembers.map(initSet);
+    } else {
+        battleState.p2 = selectedMembers.map(initSet);
+    }
+
+    socket.emit('submit_party', {
+        roomId: onlineState.roomId,
+        partyData: selectedMembers,
+        role: onlineState.role
+    });
+
+    document.getElementById('online-party-list').innerHTML = "<div>相手の選択を待っています...</div>";
 }
 
 function renderOnlinePartySelect() {

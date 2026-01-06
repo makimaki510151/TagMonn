@@ -53,7 +53,12 @@ io.on('connection', (socket) => {
                 p2Action: null
             };
 
-            // 両者に通知（P1, P2の割り当て）
+            // ルームに参加
+            socket.join(roomId);
+            const targetSocket = io.sockets.sockets.get(targetId);
+            if (targetSocket) targetSocket.join(roomId);
+
+            // 両者に通知（P1, P2의 割り当て）
             io.to(targetId).emit('match_established', { roomId, role: 1, opponentName: players[socket.id].name });
             io.to(socket.id).emit('match_established', { roomId, role: 2, opponentName: players[targetId].name });
 
@@ -106,16 +111,21 @@ io.on('connection', (socket) => {
         else room.p2Action = { type: 'initial', index };
 
         if (room.p1Action && room.p2Action) {
-            // 両者選択完了。相手の情報を公開
+            // 両者選択完了。相手の情報を制限して公開
+            const p1ActiveChar = room.p1Party[room.p1Action.index];
+            const p2ActiveChar = room.p2Party[room.p2Action.index];
+
             io.to(room.p1).emit('initial_pick_reveal', {
                 myIndex: room.p1Action.index,
                 oppIndex: room.p2Action.index,
-                oppParty: room.p2Party // ここで初めて相手のパーティ詳細を送る
+                oppActiveChar: p2ActiveChar,
+                oppPartySize: room.p2Party.length
             });
             io.to(room.p2).emit('initial_pick_reveal', {
                 myIndex: room.p2Action.index,
                 oppIndex: room.p1Action.index,
-                oppParty: room.p1Party
+                oppActiveChar: p1ActiveChar,
+                oppPartySize: room.p1Party.length
             });
             // アクションリセット
             room.p1Action = null;
@@ -128,16 +138,23 @@ io.on('connection', (socket) => {
         const room = rooms[roomId];
         if (!room) return;
 
+        // 交代アクションの場合、相手に情報を伝えるために詳細を付与する
+        if (action.type === 'switch') {
+            const myParty = role === 1 ? room.p1Party : room.p2Party;
+            action.charDetails = myParty[action.index];
+        }
+
         if (role === 1) room.p1Action = action;
         else room.p2Action = action;
 
         // 両方のアクションが揃ったら解決指示を出す
         if (room.p1Action && room.p2Action) {
-            const data = {
-                p1Action: room.p1Action,
-                p2Action: room.p2Action
-            };
-            io.to(room.p1).to(room.p2).emit('resolve_turn', data);
+            // 相手に送るアクションには、自分のキャラ詳細を含める（交代時のみ）
+            const p1DataForP2 = { ...room.p1Action };
+            const p2DataForP1 = { ...room.p2Action };
+
+            io.to(room.p1).emit('resolve_turn', { p1Action: room.p1Action, p2Action: p2DataForP1 });
+            io.to(room.p2).emit('resolve_turn', { p1Action: p1DataForP2, p2Action: room.p2Action });
 
             room.p1Action = null;
             room.p2Action = null;
