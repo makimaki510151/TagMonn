@@ -17,7 +17,8 @@ let battleState = {
 };
 
 // オンライン用変数
-let socket = io("https://makkili.a.pinggy.link");
+const DEFAULT_SERVER_URL = "https://makkili.a.pinggy.link";
+let socket = null;
 let onlineState = {
     id: null,
     name: "",
@@ -34,8 +35,48 @@ window.onload = async () => {
         initPresets();
         setupEventListeners();
         showSection('build');
+        checkServerStatus();
     }
 };
+
+async function checkServerStatus() {
+    const lamp = document.getElementById('status-lamp');
+    const text = document.getElementById('status-text');
+    if (!lamp || !text) return;
+
+    try {
+        // サーバーが生きているか簡易チェック (Socket.ioのパスを確認)
+        const res = await fetch(`${DEFAULT_SERVER_URL}/socket.io/?EIO=4&transport=polling`, { mode: 'no-cors' });
+        lamp.style.background = 'var(--success)';
+        text.textContent = 'サーバー稼働中';
+    } catch (e) {
+        lamp.style.background = 'var(--danger)';
+        text.textContent = 'サーバー停止中';
+    }
+}
+
+function showBattleModeSelect() {
+    document.getElementById('battle-mode-select').classList.remove('hidden');
+    document.getElementById('battle-setup').classList.add('hidden');
+    document.getElementById('battle-field').classList.add('hidden');
+    document.getElementById('online-section').classList.add('hidden');
+    showSection('battle');
+}
+
+function showBattleSetup(mode) {
+    document.getElementById('battle-mode-select').classList.add('hidden');
+    if (mode === 'local') {
+        document.getElementById('battle-setup').classList.remove('hidden');
+        renderBattleSetup();
+    } else {
+        document.getElementById('online-section').classList.remove('hidden');
+        // オンラインセクション内の初期表示をリセット
+        document.getElementById('online-login').classList.remove('hidden');
+        document.getElementById('online-lobby').classList.add('hidden');
+        document.getElementById('online-regulation').classList.add('hidden');
+        document.getElementById('online-party-select').classList.add('hidden');
+    }
+}
 
 async function loadData() {
     try {
@@ -101,8 +142,12 @@ function showSection(id) {
 
     if (id === 'build') renderBuildScreen();
     if (id === 'party') renderPartyScreen();
-    if (id === 'battle') renderBattleSetup();
-    // onlineは特別な初期化なし（connectOnlineでやる）
+    if (id === 'battle') {
+        // 対戦タブが押された時は、対戦中ならそのまま、そうでなければモード選択を表示
+        if (!battleState.isProcessing && document.getElementById('battle-field').classList.contains('hidden')) {
+            showBattleModeSelect();
+        }
+    }
 }
 
 function getResName(id) {
@@ -837,13 +882,22 @@ function log(m) {
 // ----------------------------------------------------
 
 function connectOnline() {
-    const serverUrl = document.getElementById('online-server-url').value;
     const name = document.getElementById('online-player-name').value;
     if (!name) return alert("名前を入力してください");
 
+    const connectBtn = document.getElementById('connect-btn');
+    connectBtn.disabled = true;
+    connectBtn.textContent = "接続中...";
+
     try {
-        // Socket接続 (URLがあれば指定、なければデフォルト)
-        socket = serverUrl ? io(serverUrl) : io();
+        // 固定URLで接続
+        socket = io(DEFAULT_SERVER_URL);
+
+        socket.on('connect_error', () => {
+            alert("サーバーに接続できませんでした。");
+            connectBtn.disabled = false;
+            connectBtn.textContent = "接続";
+        });
 
         socket.on('connect', () => {
             onlineState.id = socket.id;
@@ -959,10 +1013,33 @@ function connectOnline() {
             // バトル画面へ移行
             document.getElementById('online-party-select').classList.add('hidden');
             document.getElementById('online-section').classList.add('hidden');
+            
+            showSection('battle');
+            document.getElementById('battle-mode-select').classList.add('hidden');
+            document.getElementById('battle-setup').classList.add('hidden');
             document.getElementById('battle-field').classList.remove('hidden');
 
             startOnlineBattle(opponentPartySize);
         });
+
+        // グローバルに関数を公開
+        window.acceptRegulation = function() {
+            socket.emit('accept_regulation', { roomId: onlineState.roomId });
+        };
+
+        window.submitOnlineParty = function(partyId) {
+            const party = myParties.find(p => p.id === partyId);
+            if (!party) return;
+            
+            // サーバーへ送信
+            socket.emit('submit_party', { 
+                roomId: onlineState.roomId, 
+                role: onlineState.role, 
+                partyData: party.members 
+            });
+            
+            document.getElementById('online-party-select').innerHTML = `<h3>送信完了</h3><p>相手の選択を待っています...</p>`;
+        };
 
         socket.on('initial_pick_reveal', ({ myIndex, oppIndex, oppActiveChar, oppPartySize }) => {
             // 相手パーティ情報を受信して更新 (最初は出ているキャラのみ)
@@ -1119,11 +1196,16 @@ function startOnlineBattle(oppSize) {
 }
 
 function returnToLobby() {
-    socket.emit('leave_battle');
-    onlineState.isOnlineBattle = false;
-    document.getElementById('battle-field').classList.add('hidden');
-    document.getElementById('battle-section').classList.add('hidden');
-    document.getElementById('online-section').classList.remove('hidden');
-    document.getElementById('online-lobby').classList.remove('hidden');
-    document.getElementById('online-back-btn').classList.add('hidden');
+    if (onlineState.isOnlineBattle) {
+        onlineState.isOnlineBattle = false;
+        socket.emit('leave_battle');
+        document.getElementById('battle-field').classList.add('hidden');
+        document.getElementById('online-back-btn').classList.add('hidden');
+        showSection('battle');
+        showBattleModeSelect();
+    } else {
+        document.getElementById('battle-field').classList.add('hidden');
+        showSection('battle');
+        showBattleModeSelect();
+    }
 }
