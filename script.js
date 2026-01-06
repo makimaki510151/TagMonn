@@ -799,21 +799,6 @@ async function processTurn() {
             const prevIdx = a.p === 1 ? battleState.p1ActiveIdx : battleState.p2ActiveIdx;
             const prevName = party[prevIdx] ? party[prevIdx].name : "???";
             
-            // オンライン対戦で相手が交代した場合、そのキャラの情報を更新する必要がある
-            if (onlineState.isOnlineBattle && a.p !== onlineState.role) {
-                // サーバーから送られてくるアクションにキャラ詳細を含めるように server.js も修正が必要
-                if (a.act.charDetails) {
-                    party[a.act.index] = {
-                        ...a.act.charDetails,
-                        maxHp: a.act.charDetails.baseStats.hp,
-                        currentHp: a.act.charDetails.currentHp || a.act.charDetails.baseStats.hp,
-                        battleSpd: a.act.charDetails.baseStats.spd,
-                        battleAtk: a.act.charDetails.baseStats.atk,
-                        isFainted: false
-                    };
-                }
-            }
-
             if (a.p === 1) battleState.p1ActiveIdx = a.act.index;
             else battleState.p2ActiveIdx = a.act.index;
             log(`P${a.p}: ${prevName}を戻して ${party[a.act.index].name}を繰り出した！`);
@@ -883,6 +868,98 @@ async function processTurn() {
                     battleState.isProcessing = false;
                     updateBattleUI();
                     return;
+                }
+            }
+        }
+        updateBattleUI();
+        await new Promise(r => setTimeout(r, 1000));
+    }
+
+    battleState.p1NextAction = null;
+    battleState.p2NextAction = null;
+    battleState.isProcessing = false;
+    updateBattleUI();
+}
+
+// オンライン用ターン処理（サーバーの結果を反映）
+async function processOnlineTurn(outcomes) {
+    battleState.isProcessing = true;
+    updateBattleUI();
+    document.getElementById('waiting-overlay').classList.add('hidden');
+
+    for (let res of outcomes) {
+        if (res.type === 'switch_sync') {
+            // 死に出し同期
+            const p1c = battleState.p1[res.p1Idx];
+            const p2c = battleState.p2[res.p2Idx];
+            
+            // 相手キャラの情報を最新化
+            const targetSide = onlineState.role === 1 ? 2 : 1;
+            const targetIdx = targetSide === 1 ? res.p1Idx : res.p2Idx;
+            const targetChar = targetSide === 1 ? res.p1Char : res.p2Char;
+            const party = targetSide === 1 ? battleState.p1 : battleState.p2;
+            
+            party[targetIdx] = {
+                ...targetChar,
+                battleSpd: targetChar.baseStats.spd,
+                battleAtk: targetChar.baseStats.atk,
+                isFainted: false
+            };
+
+            battleState.p1ActiveIdx = res.p1Idx;
+            battleState.p2ActiveIdx = res.p2Idx;
+            log(`双方が新たなキャラを繰り出した！`);
+        } else if (res.type === 'switch') {
+            const party = res.p === 1 ? battleState.p1 : battleState.p2;
+            const prevIdx = res.p === 1 ? battleState.p1ActiveIdx : battleState.p2ActiveIdx;
+            const prevName = party[prevIdx] ? party[prevIdx].name : "???";
+
+            // 相手の交代の場合、情報を更新
+            if (res.p !== onlineState.role) {
+                party[res.index] = {
+                    ...res.charDetails,
+                    battleSpd: res.charDetails.baseStats.spd,
+                    battleAtk: res.charDetails.baseStats.atk,
+                    isFainted: false
+                };
+            }
+
+            if (res.p === 1) battleState.p1ActiveIdx = res.index;
+            else battleState.p2ActiveIdx = res.index;
+            log(`P${res.p}: ${prevName}を戻して ${party[res.index].name}を繰り出した！`);
+        } else if (res.type === 'move') {
+            const attackerParty = res.p === 1 ? battleState.p1 : battleState.p2;
+            const attacker = attackerParty[res.p === 1 ? battleState.p1ActiveIdx : battleState.p2ActiveIdx];
+            const targetParty = res.targetP === 1 ? battleState.p1 : battleState.p2;
+            const target = targetParty[res.targetP === 1 ? battleState.p1ActiveIdx : battleState.p2ActiveIdx];
+            const targetSideId = res.p === 1 ? 'p2-active-area' : 'p1-active-area';
+
+            log(`P${res.p}: ${attacker.name}の ${res.moveName}！`);
+
+            const targetEl = document.getElementById(targetSideId);
+            targetEl.classList.add('shake', 'flash');
+            setTimeout(() => targetEl.classList.remove('shake', 'flash'), 500);
+
+            if (res.damage > 0) {
+                if (res.resMult > 1.0) log("効果は抜群だ！");
+                if (res.resMult < 1.0) log("効果はいまひとつのようだ...");
+            }
+
+            target.currentHp = res.targetHp;
+            if (res.targetFainted) {
+                target.isFainted = true;
+                log(`${target.name}は倒れた！`);
+                
+                const hasSurvivor = targetParty.some(c => c && !c.isFainted);
+                if (!hasSurvivor) {
+                    log(`P${res.targetP}の全滅！ P${res.p}の勝利！`);
+                    battleState.isProcessing = false;
+                    updateBattleUI();
+                    document.getElementById('online-back-btn').classList.remove('hidden');
+                    return;
+                } else {
+                    // サーバーからの次のアクション（死に出し）を待つ状態へ
+                    battleState.isForcedSwitch = res.targetP;
                 }
             }
         }
@@ -1013,7 +1090,6 @@ function connectOnline() {
         // パーティリストの描画（レギュレーションに合うものだけ表示）
         window.renderOnlinePartyList = function() {
             const list = document.getElementById('online-party-list');
-            // レギュレーションの数と一致するメンバー数のパーティだけを抽出
             const validParties = myParties.filter(p => p.members.length === onlineState.partyLimit);
 
             if (validParties.length === 0) {
@@ -1031,10 +1107,6 @@ function connectOnline() {
         </div>
     `).join('');
         };
-
-        // 承認ボタンの動作 (内部関数を削除し、グローバルに定義)
-        // パーティ送信 (内部関数を削除し、グローバルに定義)
-
 
         socket.on('battle_ready_selection', ({ opponentPartySize }) => {
             // バトル画面へ移行
@@ -1058,7 +1130,6 @@ function connectOnline() {
             const party = myParties.find(p => p.id === partyId);
             if (!party) return;
             
-            // レギュレーションの数に合わせてメンバーを制限（先頭から抽出）
             const selectedMembers = party.members.slice(0, onlineState.partyLimit);
 
             const initSet = (m) => ({
@@ -1070,14 +1141,12 @@ function connectOnline() {
                 isFainted: false
             });
 
-            // 自分の役割に合わせてバトル状態を初期化
             if (onlineState.role === 1) {
                 battleState.p1 = selectedMembers.map(initSet);
             } else {
                 battleState.p2 = selectedMembers.map(initSet);
             }
 
-            // サーバーへ送信
             socket.emit('submit_party', { 
                 roomId: onlineState.roomId, 
                 role: onlineState.role, 
@@ -1088,7 +1157,6 @@ function connectOnline() {
         };
 
         socket.on('initial_pick_reveal', ({ myIndex, oppIndex, oppActiveChar, oppPartySize }) => {
-            // 相手パーティ情報を受信して更新 (最初は出ているキャラのみ)
             const initSet = (m) => ({
                 ...m,
                 maxHp: m.baseStats.hp,
@@ -1098,22 +1166,21 @@ function connectOnline() {
                 isFainted: false
             });
 
-            // 相手パーティをダミーで初期化し、アクティブなキャラだけセット
             const dummyParty = Array(oppPartySize).fill(null).map(() => ({ name: "???", isFainted: false, currentHp: 1, maxHp: 1, resistances: {}, moves: [], baseStats: { hp: 1, atk: 1, spd: 1 } }));
             
             if (onlineState.role === 1) {
                 battleState.p2 = dummyParty;
                 battleState.p2[oppIndex] = initSet(oppActiveChar);
+                battleState.p1ActiveIdx = myIndex;
+                battleState.p2ActiveIdx = oppIndex;
             } else {
                 battleState.p1 = dummyParty;
                 battleState.p1[oppIndex] = initSet(oppActiveChar);
+                battleState.p2ActiveIdx = myIndex;
+                battleState.p1ActiveIdx = oppIndex;
             }
 
             document.getElementById('waiting-overlay').classList.add('hidden');
-
-            // 選出反映
-            battleState.p1ActiveIdx = onlineState.role === 1 ? myIndex : oppIndex;
-            battleState.p2ActiveIdx = onlineState.role === 1 ? oppIndex : myIndex;
             battleState.isSelectingInitial = false;
 
             const p1Name = battleState.p1[battleState.p1ActiveIdx].name;
@@ -1123,13 +1190,8 @@ function connectOnline() {
             updateBattleUI();
         });
 
-        socket.on('resolve_turn', ({ p1Action, p2Action }) => {
-            // アクションを受信してローカルステートに適用
-            battleState.p1NextAction = p1Action;
-            battleState.p2NextAction = p2Action;
-
-            // ターン処理実行
-            processTurn();
+        socket.on('resolve_turn', ({ outcomes }) => {
+            processOnlineTurn(outcomes);
         });
 
         socket.on('opponent_left', () => {
@@ -1141,13 +1203,6 @@ function connectOnline() {
         console.error("Connection failed", e);
         alert("サーバーに接続できませんでした。");
     }
-}
-
-function disconnectOnline() {
-    if (socket) socket.disconnect();
-    socket = null;
-    document.getElementById('online-lobby').classList.add('hidden');
-    document.getElementById('online-login').classList.remove('hidden');
 }
 
 function addOnlineLog(msg) {
@@ -1176,8 +1231,6 @@ function sendRegulation(size) {
     document.getElementById('reg-status').textContent = `${size} on ${size} を提案中...`;
 }
 
-
-
 function renderOnlinePartySelect() {
     document.getElementById('online-party-select').classList.remove('hidden');
     document.getElementById('party-select-msg').textContent = `${onlineState.partyLimit}体以上のパーティを選択してください。`;
@@ -1198,7 +1251,6 @@ function startOnlineBattle(oppSize) {
     battleState.isSelectingInitial = true;
     battleState.isForcedSwitch = null;
 
-    // 相手のパーティはまだ空っぽ(Blind)にするが、枠だけ確保しておくと安全
     const dummy = Array(oppSize).fill(null);
     if (onlineState.role === 1) battleState.p2 = dummy;
     else battleState.p1 = dummy;
