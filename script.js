@@ -1058,11 +1058,30 @@ function connectOnline() {
             const party = myParties.find(p => p.id === partyId);
             if (!party) return;
             
+            // レギュレーションの数に合わせてメンバーを制限（先頭から抽出）
+            const selectedMembers = party.members.slice(0, onlineState.partyLimit);
+
+            const initSet = (m) => ({
+                ...m,
+                maxHp: m.baseStats.hp,
+                currentHp: m.baseStats.hp,
+                battleSpd: m.baseStats.spd,
+                battleAtk: m.baseStats.atk,
+                isFainted: false
+            });
+
+            // 自分の役割に合わせてバトル状態を初期化
+            if (onlineState.role === 1) {
+                battleState.p1 = selectedMembers.map(initSet);
+            } else {
+                battleState.p2 = selectedMembers.map(initSet);
+            }
+
             // サーバーへ送信
             socket.emit('submit_party', { 
                 roomId: onlineState.roomId, 
                 role: onlineState.role, 
-                partyData: party.members 
+                partyData: selectedMembers 
             });
             
             document.getElementById('online-party-select').innerHTML = `<h3>送信完了</h3><p>相手の選択を待っています...</p>`;
@@ -1157,41 +1176,7 @@ function sendRegulation(size) {
     document.getElementById('reg-status').textContent = `${size} on ${size} を提案中...`;
 }
 
-window.acceptRegulation = function() {
-    socket.emit('accept_regulation', { roomId: onlineState.roomId });
-};
 
-window.submitOnlineParty = function(partyId) {
-    const party = myParties.find(p => p.id === partyId);
-    if (!party) return;
-
-    // レギュレーションの数に合わせてメンバーを制限（先頭から抽出）
-    const selectedMembers = party.members.slice(0, onlineState.partyLimit);
-
-    const initSet = (m) => ({
-        ...m,
-        maxHp: m.baseStats.hp,
-        currentHp: m.baseStats.hp,
-        battleSpd: m.baseStats.spd,
-        battleAtk: m.baseStats.atk,
-        isFainted: false
-    });
-
-    // 自分の役割に合わせてバトル状態を初期化
-    if (onlineState.role === 1) {
-        battleState.p1 = selectedMembers.map(initSet);
-    } else {
-        battleState.p2 = selectedMembers.map(initSet);
-    }
-
-    socket.emit('submit_party', {
-        roomId: onlineState.roomId,
-        partyData: selectedMembers,
-        role: onlineState.role
-    });
-
-    document.getElementById('online-party-list').innerHTML = "<div>相手の選択を待っています...</div>";
-}
 
 function renderOnlinePartySelect() {
     document.getElementById('online-party-select').classList.remove('hidden');
