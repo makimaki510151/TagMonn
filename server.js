@@ -4,8 +4,11 @@ const { Server } = require('socket.io');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-    cors: { origin: "*" }
+const io = require('socket.io')(server, {
+  cors: {
+    origin: "https://makimaki510151.github.io", // 通信を許可するURL
+    methods: ["GET", "POST"]
+  }
 });
 
 // 静的ファイルの配信（ローカル確認用）
