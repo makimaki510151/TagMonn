@@ -32,6 +32,12 @@ io.on('connection', (socket) => {
     });
 
     socket.on('respond_challenge', ({ targetId, accept }) => {
+        // 相手(targetId)がまだ接続しているか、自分(socket.id)が登録されているか確認
+        if (!players[targetId] || !players[socket.id]) {
+            socket.emit('online_msg', '相手が見つかりません。退席した可能性があります。');
+            return;
+        }
+
         if (accept) {
             const roomId = `room_${Date.now()}_${Math.random()}`;
             players[socket.id].status = 'battle';
@@ -40,26 +46,23 @@ io.on('connection', (socket) => {
             players[targetId].roomId = roomId;
 
             rooms[roomId] = {
-                p1: targetId,
-                p2: socket.id,
-                regulation: null,
-                p1Party: null,
-                p2Party: null,
+                p1: targetId, // 申し込んだ人
+                p2: socket.id, // 承認した人
                 p1Action: null,
                 p2Action: null,
-                p1ActiveIdx: -1,
-                p2ActiveIdx: -1
+                partySize: 3 // デフォルト
             };
 
             socket.join(roomId);
             const targetSocket = io.sockets.sockets.get(targetId);
-            if (targetSocket) targetSocket.join(roomId);
-
-            io.to(targetId).emit('match_established', { roomId, role: 1, opponentName: players[socket.id].name });
-            io.to(socket.id).emit('match_established', { roomId, role: 2, opponentName: players[targetId].name });
-            io.emit('update_player_list', Object.values(players));
-        } else {
-            io.to(targetId).emit('challenge_declined', { fromName: players[socket.id].name });
+            if (targetSocket) {
+                targetSocket.join(roomId);
+                io.to(roomId).emit('battle_start', {
+                    roomId,
+                    p1Name: players[targetId].name,
+                    p2Name: players[socket.id].name
+                });
+            }
         }
     });
 
