@@ -833,9 +833,9 @@ async function processTurn() {
         if (action.char.isFainted) continue;
 
         // --- 追加：ひるみチェック ---
-        if (attacker.isFlinching) {
+        if (action.char.isFlinching) {
             log(`${attacker.name}はひるんで動けない！`);
-            attacker.isFlinching = false;
+            action.char.isFlinching = false;
             // 必要に応じて await wait(1000); などの演出待ちを入れる
             continue;
         }
