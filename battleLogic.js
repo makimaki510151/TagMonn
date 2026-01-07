@@ -40,12 +40,13 @@ const BattleLogic = {
      * @param {Object} attacker - 攻撃側キャラ
      * @param {Object} target - 防御側キャラ
      * @param {number} damage - 与えたダメージ（ドレイン用）
+     * @param {Object} move - 使用された技データ（耐性特定用）
      * @returns {Object|null} 適用された効果の内容
      */
     applyEffect: function (effect, attacker, target, damage, move) {
         if (!effect) return null;
 
-        // 成功確率の判定 (chanceが1未満なら確率、未記載または1なら100%)
+        // 成功確率の判定
         const chance = effect.chance !== undefined ? effect.chance : 1.0;
         if (Math.random() >= chance) {
             return null;
@@ -58,11 +59,25 @@ const BattleLogic = {
         };
         let statName = statNames[effect.stat] || effect.stat;
 
-        // def（耐性）の場合は、技の耐性タイプ名を取得する
+        // 対象の決定
+        const isBuff = effect.type === 'buff';
+        const subject = isBuff ? attacker : target;
+
+        // 特殊処理: def（耐性）の場合、技の属性に基づき耐性値を直接書き換える
         if (effect.stat === 'def' && move) {
-            // gameDataはグローバルにある想定、または引数で渡す
-            const res = gameData.resistances.find(r => r.id === move.res_type);
-            statName = res ? `${res.name}耐性` : '耐性';
+            const resId = move.res_type;
+            // 現在の耐性値に倍率を掛ける（例: 0.5倍で耐性強化、1.5倍で弱体化）
+            if (subject.resistances[resId] !== undefined) {
+                subject.resistances[resId] *= effect.value;
+            }
+
+            // 表示用の名前解決（gameData参照はscript.js側の想定）
+            if (typeof gameData !== 'undefined' && gameData.resistances) {
+                const res = gameData.resistances.find(r => r.id === resId);
+                statName = res ? `${res.name}耐性` : '耐性';
+            } else {
+                statName = '耐性';
+            }
         }
 
         const result = {
@@ -73,10 +88,18 @@ const BattleLogic = {
 
         switch (effect.type) {
             case 'buff':
-                attacker[`battle${effect.stat.charAt(0).toUpperCase() + effect.stat.slice(1)}`] *= effect.value;
+                // atk, spd の場合は battleXxx プロパティを更新
+                if (effect.stat !== 'def' && effect.stat !== 'hp') {
+                    const key = `battle${effect.stat.charAt(0).toUpperCase() + effect.stat.slice(1)}`;
+                    attacker[key] *= effect.value;
+                }
                 break;
             case 'debuff':
-                target[`battle${effect.stat.charAt(0).toUpperCase() + effect.stat.slice(1)}`] *= effect.value;
+                // atk, spd の場合は battleXxx プロパティを更新
+                if (effect.stat !== 'def' && effect.stat !== 'hp') {
+                    const key = `battle${effect.stat.charAt(0).toUpperCase() + effect.stat.slice(1)}`;
+                    target[key] *= effect.value;
+                }
                 break;
             case 'heal':
                 const healAmt = Math.floor(attacker.maxHp * effect.value);

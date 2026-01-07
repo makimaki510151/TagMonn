@@ -847,7 +847,7 @@ async function processTurn() {
             }
             // 効果処理
             if (action.act.move.effect) {
-                const effectResult = BattleLogic.applyEffect(action.act.move.effect, action.char, currentTarget, res.damage, action.sct.move);
+                const effectResult = BattleLogic.applyEffect(action.act.move.effect, action.char, currentTarget, res.damage, action.act.move);
                 if (effectResult) {
                     if (effectResult.type === 'buff') {
                         log(`${action.char.name}の${effectResult.stat}が上がった！`);
