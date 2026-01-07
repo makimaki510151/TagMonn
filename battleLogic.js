@@ -112,9 +112,11 @@ const BattleLogic = {
                 result.amount = drainAmt;
                 break;
             case 'flinch':
-                const chance = effect.chance || 1;
-                if (Math.random() < chance) {
+                const flinchChance = effect.chance || 1;
+                if (Math.random() < flinchChance) {
                     target.isFlinching = true;
+                    // 追加：ひるみが発生したことを知らせる
+                    result.type = 'flinch_apply';
                 }
                 break;
         }

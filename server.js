@@ -161,15 +161,14 @@ io.on('connection', (socket) => {
                 const target = a.p === 1 ? room.p2Party[room.p2ActiveIdx] : room.p1Party[room.p1ActiveIdx];
 
                 if (attacker.isFainted) continue;
-
                 if (attacker.isFlinching) {
                     outcomes.push({
                         type: 'flinch_wait',
-                        p: attackerSide,
-                        attackerName: attacker.name
+                        attackerName: attacker.name,
+                        p: a.p
                     });
-                    attacker.isFlinching = false; // 判定後に解除
-                    continue;
+                    attacker.isFlinching = false; // 次のターンは動けるようにリセット
+                    continue; // 技の処理をスキップ
                 }
 
                 // server.js ターン解決部分

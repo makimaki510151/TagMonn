@@ -833,11 +833,10 @@ async function processTurn() {
         if (action.char.isFainted) continue;
 
         // --- 追加：ひるみチェック ---
-        if (action.char.isFlinching) {
-            log(`${action.char.name}はひるんで動けない！`);
-            action.char.isFlinching = false; // フラグを解除
-            updateBattleUI();
-            await new Promise(r => setTimeout(r, 1000));
+        if (attacker.isFlinching) {
+            log(`${attacker.name}はひるんで動けない！`);
+            attacker.isFlinching = false;
+            // 必要に応じて await wait(1000); などの演出待ちを入れる
             continue;
         }
         // -------------------------
