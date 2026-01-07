@@ -815,7 +815,7 @@ function handleAction(pNum, action) {
 
 async function processTurn() {
     battleState.isProcessing = true;
-    updateBattleUI(); // パネルを消す
+    updateBattleUI();
 
     const a1 = battleState.p1[battleState.p1ActiveIdx];
     const a2 = battleState.p2[battleState.p2ActiveIdx];
@@ -824,7 +824,6 @@ async function processTurn() {
         { p: 1, act: battleState.p1NextAction, char: a1, target: a2 },
         { p: 2, act: battleState.p2NextAction, char: a2, target: a1 }
     ].sort((a, b) => {
-        // 優先度計算: 交代(1000) > 技優先度 > 素早さ
         const priA = (a.act.type === 'switch' ? 1000 : (a.act.move.priority || 0) * 100) + a.char.battleSpd;
         const priB = (b.act.type === 'switch' ? 1000 : (b.act.move.priority || 0) * 100) + b.char.battleSpd;
         return priB - priA;
@@ -833,7 +832,16 @@ async function processTurn() {
     for (let action of actions) {
         if (action.char.isFainted) continue;
 
-        // 交代アクションの処理
+        // --- 追加：ひるみチェック ---
+        if (action.char.isFlinching) {
+            log(`${action.char.name}はひるんで動けない！`);
+            action.char.isFlinching = false; // フラグを解除
+            updateBattleUI();
+            await new Promise(r => setTimeout(r, 1000));
+            continue;
+        }
+        // -------------------------
+
         if (action.act.type === 'switch') {
             const party = action.p === 1 ? battleState.p1 : battleState.p2;
             const prevName = action.char.name;
@@ -843,14 +851,15 @@ async function processTurn() {
             if (action.p === 1) battleState.p1ActiveIdx = nextIdx;
             else battleState.p2ActiveIdx = nextIdx;
 
+            // 交代したキャラのひるみ状態はリセットしておく
+            nextChar.isFlinching = false;
+
             log(`P${action.p}: ${prevName}を戻して ${nextChar.name}を繰り出した！`);
             updateBattleUI();
             await new Promise(r => setTimeout(r, 1000));
-            continue; // 交代したらこのターンは終わり
+            continue;
         }
 
-        // 攻撃技の処理
-        // ターゲットが交代している可能性があるため再取得
         const currentTargetIdx = action.p === 1 ? battleState.p2ActiveIdx : battleState.p1ActiveIdx;
         const currentTarget = action.p === 1 ? battleState.p2[currentTargetIdx] : battleState.p1[currentTargetIdx];
 
@@ -865,7 +874,7 @@ async function processTurn() {
                 if (res.resMult > 1.0) log("効果は抜群だ！");
                 if (res.resMult < 1.0) log("効果はいまひとつのようだ...");
             }
-            // 効果処理
+
             if (action.act.move.effect) {
                 const effectResult = BattleLogic.applyEffect(action.act.move.effect, action.char, currentTarget, res.damage, action.act.move);
                 if (effectResult) {
@@ -878,6 +887,10 @@ async function processTurn() {
                     } else if (effectResult.type === 'drain') {
                         log(`${action.char.name}は体力を吸い取った！`);
                     }
+                    // --- 追加：ひるみ効果のログ ---
+                    else if (effectResult.type === 'flinch') {
+                        log(`${currentTarget.name}はひるんだ！`);
+                    }
                 }
             }
 
@@ -886,12 +899,10 @@ async function processTurn() {
                 currentTarget.isFainted = true;
                 log(`${currentTarget.name}は倒れた！`);
 
-                // 全滅判定
                 const party = action.p === 1 ? battleState.p2 : battleState.p1;
                 if (!party.some(c => !c.isFainted)) {
                     const winnerNum = action.p;
                     log(`P${winnerNum}の勝利！`);
-
                     battleState.isProcessing = false;
                     updateBattleUI();
 
@@ -909,15 +920,11 @@ async function processTurn() {
                             renderStoryScreen();
                         }
                     } else {
-                        // ローカル対戦終了
                         alert(`P${winnerNum}の勝利！バトルを終了します。`);
                         showBattleModeSelect();
                     }
                     return;
                 }
-
-                // 倒れた場合、次の行動（倒された側の攻撃など）はキャンセルされるが、
-                // 強制交代（死に出し）フェーズへ移行するためループを抜ける
                 battleState.isForcedSwitch = (action.p === 1 ? 2 : 1);
                 break;
             }
@@ -927,6 +934,9 @@ async function processTurn() {
         updateBattleUI();
         await new Promise(r => setTimeout(r, 1000));
     }
+
+    // --- 追加：ターン終了時に全員のひるみフラグを掃除 ---
+    battleState.p1.concat(battleState.p2).forEach(c => c.isFlinching = false);
 
     battleState.p1NextAction = null; battleState.p2NextAction = null;
     battleState.isProcessing = false;
