@@ -111,6 +111,12 @@ const BattleLogic = {
                 attacker.currentHp = Math.min(attacker.maxHp, attacker.currentHp + drainAmt);
                 result.amount = drainAmt;
                 break;
+            case 'flinch':
+                const chance = effect.chance || 1;
+                if (Math.random() < chance) {
+                    target.isFlinching = true;
+                }
+                break;
         }
 
         return result;

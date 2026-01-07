@@ -1043,22 +1043,47 @@ window.sendRegulation = (size) => { socket.emit('propose_regulation', { roomId: 
 window.returnToLobby = () => { location.reload(); };
 
 async function processOnlineTurn(outcomes) {
-    // オンライン用のターン処理
     battleState.isProcessing = true;
     updateBattleUI();
 
     for (let out of outcomes) {
-        if (out.type === 'move') {
-            log(`P${out.p}: ${out.attackerName}の ${out.moveName}！`);
-            if (out.isHit) {
-                log(`${out.damage}のダメージ！`);
-            } else {
-                log("攻撃は外れた！");
-            }
-        } else if (out.type === 'switch') {
-            log(`P${out.p}: ${out.char.name}に交代！`);
+        switch (out.type) {
+            case 'move':
+                log(`P${out.p} ${out.attackerName}の ${out.moveName}！`);
+                if (!out.isHit) {
+                    log("攻撃は外れた！");
+                } else {
+                    if (out.resMult > 1.0) log("効果は抜群だ！");
+                    if (out.resMult < 1.0) log("効果はいまひとつのようだ。");
+                    log(`${out.damage} のダメージ！`);
+                }
+                break;
+
+            case 'flinch_apply':
+                log(`${out.targetName}はひるんだ！`);
+                break;
+
+            case 'flinch_wait':
+                log(`${out.attackerName}はひるんで動けない！`);
+                break;
+
+            case 'stat_change':
+                const trend = out.isBuff ? "上がった！" : "下がった！";
+                log(`P${out.targetP} ${out.stat}が ${trend}`);
+                break;
+
+            case 'heal':
+                log(`${out.attackerName}は ${out.healAmt} 回復した！`);
+                break;
+
+            // ...その他の型
         }
+
+        // 演出用のウェイト
+        updateBattleUI();
+        await new Promise(r => setTimeout(r, 800));
     }
+
     battleState.isProcessing = false;
     updateBattleUI();
 }

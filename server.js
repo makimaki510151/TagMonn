@@ -109,7 +109,7 @@ io.on('connection', (socket) => {
             room.p2ActiveIdx = index;
             room.p2Action = { type: 'initial' };
         }
-        
+
         // 既にバトル中の死に出し（forced switch）の場合
         const roomState = rooms[roomId];
         if (roomState.p1Party && roomState.p2Party && roomState.p1ActiveIdx !== -1 && roomState.p2ActiveIdx !== -1) {
@@ -162,6 +162,16 @@ io.on('connection', (socket) => {
 
                 if (attacker.isFainted) continue;
 
+                if (attacker.isFlinching) {
+                    outcomes.push({
+                        type: 'flinch_wait',
+                        p: attackerSide,
+                        attackerName: attacker.name
+                    });
+                    attacker.isFlinching = false; // 判定後に解除
+                    continue;
+                }
+
                 // server.js ターン解決部分
                 if (a.act.type === 'move') {
                     const move = a.act.move;
@@ -205,7 +215,7 @@ io.on('connection', (socket) => {
                                     const isBuff = effectResult.type === 'buff';
                                     const targetRole = isBuff ? attackerSide : targetSide;
                                     const targetChar = isBuff ? attacker : target;
-                                    
+
                                     if (effectResult.stat === 'def') {
                                         outcomes.push({
                                             type: 'stat_change',
@@ -228,32 +238,40 @@ io.on('connection', (socket) => {
                                             isBuff: isBuff
                                         });
                                     }
+                                } else if (effectResult.type === 'flinch') {
+                                    // すでに動いていない場合のみ有効（先手を取った時のみ意味がある）
+                                    outcomes.push({
+                                        type: 'flinch_apply',
+                                        targetP: targetSide,
+                                        targetName: target.name
+                                    });
                                 }
                             }
                         }
                     }
                 } else if (a.act.type === 'switch') {
                     const prevIdx = a.p === 1 ? room.p1ActiveIdx : room.p2ActiveIdx;
-                    
+
                     if (a.p === 1) room.p1ActiveIdx = a.act.index;
                     else room.p2ActiveIdx = a.act.index;
-                    
+
                     const activeChar = a.p === 1 ? room.p1Party[room.p1ActiveIdx] : room.p2Party[room.p2ActiveIdx];
-                    
-                    outcomes.push({ 
-                        type: 'switch', 
-                        p: a.p, 
-                        index: a.act.index, 
-                        char: activeChar 
+                    activeChar.isFlinching = false;
+
+                    outcomes.push({
+                        type: 'switch',
+                        p: a.p,
+                        index: a.act.index,
+                        char: activeChar
                     });
-                    
+
                     // 死に出し（forced switch）の場合、相手に新しいキャラの情報を通知する必要がある
                     // 通常の交代でも同様だが、特に死に出し時はクライアント側で待機が発生するため重要
                     const opponentId = a.p === 1 ? room.p2 : room.p1;
-                    io.to(opponentId).emit('forced_switch_reveal', { 
-                        role: a.p, 
-                        index: a.act.index, 
-                        activeChar: activeChar 
+                    io.to(opponentId).emit('forced_switch_reveal', {
+                        role: a.p,
+                        index: a.act.index,
+                        activeChar: activeChar
                     });
                 }
             }
