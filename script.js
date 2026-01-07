@@ -58,18 +58,18 @@ function showTitle() {
 function selectGameMode(mode) {
     ModeManager.setMode(mode);
     refreshLocalData();
-    
+
     document.getElementById('game-header').classList.remove('hidden');
     document.getElementById('detail-display').classList.remove('hidden');
     document.getElementById('title-section').classList.add('hidden');
-    
+
     const modeTitle = mode === 'story' ? 'Tagmon Story' : 'Tagmon Free';
     document.getElementById('mode-title').textContent = modeTitle;
     document.getElementById('mode-title').style.color = mode === 'story' ? 'var(--primary)' : '#8b5cf6';
-    
+
     const storyNav = document.getElementById('nav-story');
     const battleNav = document.getElementById('nav-battle');
-    
+
     if (mode === 'story') {
         storyNav.classList.remove('hidden');
         battleNav.classList.add('hidden');
@@ -79,7 +79,7 @@ function selectGameMode(mode) {
         battleNav.classList.remove('hidden');
         showSection('build');
     }
-    
+
     resetBuild();
 }
 
@@ -111,7 +111,7 @@ function initPresets() {
         { name: "アイアンゴーレム", tags: [106, 111, 108], moves: [1061, 1111, 1081, 1], id: 5 },
         { name: "ホーリーエルフ", tags: [102, 109, 118], moves: [1021, 1022, 1091, 2], id: 6 }
     ];
-    
+
     const freeChars = [];
     presets.forEach(p => {
         const tags = p.tags.map(tid => gameData.tags.find(t => t.id === tid));
@@ -129,7 +129,7 @@ function initPresets() {
         { id: 1002, name: "【初心者用】テクニカルパーティ", members: [freeChars[3], freeChars[4], freeChars[5]] }
     ];
     localStorage.setItem('tm_free_parties', JSON.stringify(freeParties));
-    
+
     refreshLocalData();
 }
 
@@ -183,7 +183,7 @@ function renderTags() {
     container.innerHTML = '';
 
     const unlockedTagIds = ModeManager.getUnlockedTags();
-    
+
     gameData.tags.forEach(tag => {
         const isUnlocked = unlockedTagIds.includes(tag.id);
         if (ModeManager.currentMode === 'story' && !isUnlocked) return;
@@ -285,8 +285,8 @@ function renderMoveCandidates() {
     container.innerHTML = '';
 
     gameData.moves.forEach(move => {
-        const canLearn = move.required_tags.length === 0 || 
-                         move.required_tags.some(tid => currentBuild.tags.some(t => t.id === tid));
+        const canLearn = move.required_tags.length === 0 ||
+            move.required_tags.some(tid => currentBuild.tags.some(t => t.id === tid));
         if (!canLearn) return;
 
         const btn = document.createElement('button');
@@ -456,7 +456,7 @@ function saveParty() {
 function renderStoryScreen() {
     const list = document.getElementById('story-stage-list');
     const progress = JSON.parse(localStorage.getItem('tm_story_progress'));
-    
+
     list.innerHTML = gameData.story_stages.map(s => {
         const isCleared = progress.clearedStages.includes(s.id);
         return `
@@ -474,7 +474,7 @@ function renderStoryScreen() {
 window.startStory = (id) => {
     const stage = gameData.story_stages.find(s => s.id === id);
     battleState.currentStage = stage;
-    
+
     document.getElementById('story-list-view').classList.add('hidden');
     document.getElementById('story-dialogue-view').classList.remove('hidden');
     document.getElementById('story-dialogue-title').textContent = stage.title;
@@ -492,16 +492,16 @@ window.startStory = (id) => {
 function showStoryBattleSetup() {
     document.getElementById('story-dialogue-view').classList.add('hidden');
     showSection('battle');
-    
+
     document.getElementById('battle-mode-select').classList.add('hidden');
     document.getElementById('battle-setup').classList.remove('hidden');
-    
+
     const p1div = document.getElementById('select-p1-party');
     const p2div = document.getElementById('select-p2-party');
-    
+
     p1div.innerHTML = myParties.map(p => `<button class="tag-btn ${(selectedP1?.id === p.id) ? 'active' : ''}" onclick="setStoryParty(${p.id})">${p.name}</button>`).join('');
     p2div.innerHTML = `<div class="tag-btn active" style="cursor:default;">エネミーチーム</div>`;
-    
+
     selectedP2 = {
         name: "エネミー",
         members: battleState.currentStage.enemyParty.map(e => {
@@ -550,19 +550,19 @@ async function checkServerStatus() {
     const text = document.getElementById('status-text');
     const joinBtn = document.getElementById('connect-btn');
     if (!lamp || !text) return;
-    
+
     lamp.style.background = '#cbd5e1';
     text.textContent = 'サーバー接続確認中...';
 
     try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 3000);
-        
-        const res = await fetch(`${DEFAULT_SERVER_URL}/socket.io/?EIO=4&transport=polling`, { 
-            mode: 'no-cors', 
-            signal: controller.signal 
+
+        const res = await fetch(`${DEFAULT_SERVER_URL}/socket.io/?EIO=4&transport=polling`, {
+            mode: 'no-cors',
+            signal: controller.signal
         });
-        
+
         clearTimeout(timeoutId);
         lamp.style.background = 'var(--success)';
         text.textContent = 'サーバー稼働中';
@@ -664,7 +664,7 @@ function renderSelectionPanel() {
     const switchCont = document.getElementById('switch-actions');
     moveCont.innerHTML = ""; switchCont.innerHTML = "";
     let pNum = battleState.isSelectingInitial ? (battleState.p1ActiveIdx === -1 ? 1 : 2) : battleState.isForcedSwitch;
-    
+
     // ストーリーモードのCPU処理
     if (battleState.isStoryMode && pNum === 2) {
         setTimeout(() => {
@@ -674,7 +674,7 @@ function renderSelectionPanel() {
         }, 500);
         return;
     }
-    
+
     const container = pNum === 1 ? moveCont : switchCont;
     container.innerHTML = `<h4>キャラ選択</h4><div class="action-grid"></div>`;
     const grid = container.querySelector('.action-grid');
@@ -683,7 +683,7 @@ function renderSelectionPanel() {
         if (!c.isFainted) {
             const btn = document.createElement('button');
             btn.className = 'action-btn';
-            
+
             // 詳細情報表示
             let resSummary = '';
             Object.entries(c.resistances).forEach(([id, val]) => {
@@ -698,7 +698,7 @@ function renderSelectionPanel() {
                 <div style="font-size:0.7rem; color:var(--text-muted);">H:${Math.floor(c.currentHp)} A:${c.battleAtk} S:${c.battleSpd}</div>
                 <div style="font-size:0.6rem; margin-top:2px;">${resSummary}</div>
             `;
-            
+
             btn.onmouseover = () => showDetail(move, 'move');
             btn.onclick = () => selectCharacter(pNum, idx);
             grid.appendChild(btn);
@@ -722,7 +722,7 @@ function selectCharacter(pNum, idx) {
 // ターン中の行動選択パネル（技と交代ボタンを並べる）
 function renderActionPanel(pNum, char, containerId) {
     const cont = document.getElementById(containerId);
-    
+
     // CPU処理
     if (battleState.isStoryMode && pNum === 2) {
         if (!battleState.p2NextAction) {
@@ -732,10 +732,10 @@ function renderActionPanel(pNum, char, containerId) {
         }
         return;
     }
-    
+
     cont.innerHTML = `<h4>P${pNum}の選択</h4><div class="action-grid"></div>`;
     const grid = cont.querySelector('.action-grid');
-    
+
     // 選択中のアクションを取得してハイライト
     const currentAction = pNum === 1 ? battleState.p1NextAction : battleState.p2NextAction;
 
@@ -750,7 +750,7 @@ function renderActionPanel(pNum, char, containerId) {
         btn.onclick = () => handleAction(pNum, { type: 'move', move: m });
         grid.appendChild(btn);
     });
-    
+
     // 交代ボタン（控えキャラを表示）
     const party = pNum === 1 ? battleState.p1 : battleState.p2;
     party.forEach((c, idx) => {
@@ -788,7 +788,7 @@ function renderActionPanel(pNum, char, containerId) {
 function handleAction(pNum, action) {
     if (pNum === 1) battleState.p1NextAction = action;
     else battleState.p2NextAction = action;
-    
+
     if (battleState.p1NextAction && battleState.p2NextAction) processTurn();
     else updateBattleUI();
 }
@@ -799,7 +799,7 @@ async function processTurn() {
 
     const a1 = battleState.p1[battleState.p1ActiveIdx];
     const a2 = battleState.p2[battleState.p2ActiveIdx];
-    
+
     const actions = [
         { p: 1, act: battleState.p1NextAction, char: a1, target: a2 },
         { p: 2, act: battleState.p2NextAction, char: a2, target: a1 }
@@ -819,10 +819,10 @@ async function processTurn() {
             const prevName = action.char.name;
             const nextIdx = action.act.index;
             const nextChar = party[nextIdx];
-            
+
             if (action.p === 1) battleState.p1ActiveIdx = nextIdx;
             else battleState.p2ActiveIdx = nextIdx;
-            
+
             log(`P${action.p}: ${prevName}を戻して ${nextChar.name}を繰り出した！`);
             updateBattleUI();
             await new Promise(r => setTimeout(r, 1000));
@@ -836,21 +836,22 @@ async function processTurn() {
 
         log(`${action.char.name}の${action.act.move.name}！`);
         const res = BattleLogic.calculateDamage(action.act.move, action.char, currentTarget);
-        
-        if (res.isHit) {
-            currentTarget.currentHp -= res.damage;
-            log(`${res.damage}のダメージ！`);
-            
-            if (res.resMult > 1.0) log("効果は抜群だ！");
-            if (res.resMult < 1.0) log("効果はいまひとつのようだ...");
 
+        if (res.isHit) {
+            if (action.act.move.power > 0) {
+                currentTarget.currentHp -= res.damage;
+                log(`${res.damage}のダメージ！`);
+
+                if (res.resMult > 1.0) log("効果は抜群だ！");
+                if (res.resMult < 1.0) log("効果はいまひとつのようだ...");
+            }
             // 効果処理
             if (action.act.move.effect) {
                 const effectResult = BattleLogic.applyEffect(action.act.move.effect, action.char, currentTarget, res.damage);
                 if (effectResult) {
-                     if (effectResult.type === 'buff') log(`${action.char.name}の${effectResult.stat}が上がった！`);
-                     else if (effectResult.type === 'debuff') log(`${currentTarget.name}の${effectResult.stat}が下がった！`);
-                     else if (effectResult.type === 'heal') log(`${action.char.name}は回復した！`);
+                    if (effectResult.type === 'buff') log(`${action.char.name}の${effectResult.stat}が上がった！`);
+                    else if (effectResult.type === 'debuff') log(`${currentTarget.name}の${effectResult.stat}が下がった！`);
+                    else if (effectResult.type === 'heal') log(`${action.char.name}は回復した！`);
                 }
             }
 
@@ -858,7 +859,7 @@ async function processTurn() {
                 currentTarget.currentHp = 0;
                 currentTarget.isFainted = true;
                 log(`${currentTarget.name}は倒れた！`);
-                
+
                 // 全滅判定
                 const party = action.p === 1 ? battleState.p2 : battleState.p1;
                 if (!party.some(c => !c.isFainted)) {
@@ -868,7 +869,7 @@ async function processTurn() {
                     updateBattleUI();
                     return;
                 }
-                
+
                 // 倒れた場合、次の行動（倒された側の攻撃など）はキャンセルされるが、
                 // 強制交代（死に出し）フェーズへ移行するためループを抜ける
                 battleState.isForcedSwitch = (action.p === 1 ? 2 : 1);
@@ -880,7 +881,7 @@ async function processTurn() {
         updateBattleUI();
         await new Promise(r => setTimeout(r, 1000));
     }
-    
+
     battleState.p1NextAction = null; battleState.p2NextAction = null;
     battleState.isProcessing = false;
     updateBattleUI();
@@ -891,7 +892,7 @@ function handleStoryClear() {
     ModeManager.clearStage(stage.id);
     const rewardTag = gameData.tags.find(t => t.id === stage.rewardTagId);
     ModeManager.unlockTag(stage.rewardTagId);
-    
+
     document.getElementById('battle-field').classList.add('hidden');
     document.getElementById('story-section').classList.remove('hidden');
     document.getElementById('story-list-view').classList.add('hidden');
@@ -999,17 +1000,17 @@ async function processOnlineTurn(outcomes) {
     // オンライン用のターン処理
     battleState.isProcessing = true;
     updateBattleUI();
-    
+
     for (let out of outcomes) {
         if (out.type === 'move') {
-             log(`P${out.p}: ${out.attackerName}の ${out.moveName}！`);
-             if (out.isHit) {
-                 log(`${out.damage}のダメージ！`);
-             } else {
-                 log("攻撃は外れた！");
-             }
+            log(`P${out.p}: ${out.attackerName}の ${out.moveName}！`);
+            if (out.isHit) {
+                log(`${out.damage}のダメージ！`);
+            } else {
+                log("攻撃は外れた！");
+            }
         } else if (out.type === 'switch') {
-             log(`P${out.p}: ${out.char.name}に交代！`);
+            log(`P${out.p}: ${out.char.name}に交代！`);
         }
     }
     battleState.isProcessing = false;
