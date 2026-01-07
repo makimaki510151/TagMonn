@@ -44,7 +44,17 @@ window.onload = async () => {
 };
 
 function refreshLocalData() {
-    myChars = ModeManager.getChars();
+    myChars = ModeManager.getChars().map(char => {
+        // 保存されているタグ情報から最新のステータスを再計算
+        const latestTags = char.tags.map(t => gameData.tags.find(gt => gt.id === t.id)).filter(t => t);
+        return {
+            ...char,
+            tags: latestTags,
+            moves: char.moves.map(m => gameData.moves.find(gm => gm.id === m.id)).filter(m => m),
+            baseStats: calculateStats(latestTags),
+            resistances: calculateResistances(latestTags)
+        };
+    });
     myParties = ModeManager.getParties();
 }
 
@@ -274,17 +284,23 @@ function updateBuildPreview() {
 
 // ステータス計算式を元に戻す
 function calculateStats(tags) {
-    let baseHp = 150, baseAtk = 80, baseSpd = 80;
-    let modHp = 0, modAtk = 0, modSpd = 0;
-    tags.forEach(t => {
-        modHp += (t.hp || 0) * 0.5;
-        modAtk += (t.atk || 0) * 0.3;
-        modSpd += (t.spd || 0) * 0.3;
+    // ベース値の設定
+    let hp = 200;
+    let atk = 100;
+    let spd = 100;
+
+    tags.forEach(tag => {
+        // hpは常に2倍として扱うため、タグの加算値を2倍にして足す
+        hp += (tag.hp || 0) * 2;
+        atk += (tag.atk || 0);
+        spd += (tag.spd || 0);
     });
+
     return {
-        hp: Math.floor(baseHp + modHp),
-        atk: Math.floor(baseAtk + modAtk),
-        spd: Math.floor(baseSpd + modSpd)
+        // 係数を削除し、最低値を1に固定
+        hp: Math.max(1, hp),
+        atk: Math.max(1, atk),
+        spd: Math.max(1, spd)
     };
 }
 
@@ -366,9 +382,27 @@ window.editChar = (id) => {
         alert("ストーリーモードで作成したキャラクターはフリーモードでは編集できません。");
         return;
     }
-    currentBuild = JSON.parse(JSON.stringify(char));
+
+    // 保存されている ID リストから、最新の gameData オブジェクトを再取得する
+    const latestTags = char.tags.map(savedTag =>
+        gameData.tags.find(t => t.id === savedTag.id)
+    ).filter(t => t); // 存在しないタグを除外
+
+    const latestMoves = char.moves.map(savedMove =>
+        gameData.moves.find(m => m.id === savedMove.id)
+    ).filter(m => m); // 存在しない技を除外
+
+    // currentBuild を最新データで再構築
+    currentBuild = {
+        id: char.id,
+        name: char.name,
+        tags: latestTags,
+        moves: latestMoves,
+        isStoryOrigin: char.isStoryOrigin
+    };
+
     document.getElementById('char-name').value = char.name;
-    renderBuildScreen();
+    renderBuildScreen(); // ここで calculateStats 等が走り、最新の数値が表示される
     window.scrollTo(0, 0);
 };
 
