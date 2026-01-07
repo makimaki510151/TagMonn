@@ -55,7 +55,7 @@ const BattleLogic = {
         const statNames = {
             'atk': '攻撃',
             'spd': '速度',
-            'hp': 'HP'
+            'hp': '体力'
         };
         let statName = statNames[effect.stat] || effect.stat;
 

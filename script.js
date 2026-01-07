@@ -236,9 +236,9 @@ function updateBuildPreview() {
     resHtml += '</div>';
 
     preview.innerHTML = `
-        <div class="stat-row"><span>HP</span><strong>${stats.hp}</strong></div>
-        <div class="stat-row"><span>ATK</span><strong>${stats.atk}</strong></div>
-        <div class="stat-row"><span>SPD</span><strong>${stats.spd}</strong></div>
+        <div class="stat-row"><span>体力</span><strong>${stats.hp}</strong></div>
+        <div class="stat-row"><span>攻撃</span><strong>${stats.atk}</strong></div>
+        <div class="stat-row"><span>速度</span><strong>${stats.spd}</strong></div>
         <div style="margin-top:10px; font-size:0.8rem; color:${currentBuild.tags.length < 1 ? 'var(--danger)' : 'var(--text-muted)'};">
             タグ数: ${currentBuild.tags.length}/6
         </div>
@@ -531,7 +531,7 @@ function showDetail(item, type) {
     if (!detailBox) return;
     let html = `<strong>${item.name}</strong><br>`;
     if (type === 'tag') {
-        html += `HP:${item.hp} / ATK:${item.atk} / SPD:${item.spd || 0}<br>`;
+        html += `体力:${item.hp} / 攻撃:${item.atk} / 速度:${item.spd || 0}<br>`;
         html += `<small>${item.description}</small>`;
     } else if (type === 'move') {
         const resName = getResName(item.res_type);
@@ -695,7 +695,7 @@ function renderSelectionPanel() {
 
             btn.innerHTML = `
                 <div style="font-weight:bold; font-size:0.8rem;">${c.name}</div>
-                <div style="font-size:0.7rem; color:var(--text-muted);">H:${Math.floor(c.currentHp)} A:${c.battleAtk} S:${c.battleSpd}</div>
+                <div style="font-size:0.7rem; color:var(--text-muted);">体力:${Math.floor(c.currentHp)} 攻撃:${c.battleAtk} 速度:${c.battleSpd}</div>
                 <div style="font-size:0.6rem; margin-top:2px;">${resSummary}</div>
             `;
 
@@ -775,7 +775,7 @@ function renderActionPanel(pNum, char, containerId) {
 
             btn.innerHTML = `
                 <div style="font-weight:bold; font-size:0.8rem;">交代:${c.name}</div>
-                <div style="font-size:0.7rem; color:var(--text-muted);">H:${Math.floor(c.currentHp)} A:${c.battleAtk} S:${c.battleSpd}</div>
+                <div style="font-size:0.7rem; color:var(--text-muted);">体力:${Math.floor(c.currentHp)} 攻撃:${c.battleAtk} 速度:${c.battleSpd}</div>
                 <div style="font-size:0.6rem; margin-top:2px;">${resSummary}</div>
             `;
 
@@ -855,7 +855,7 @@ async function processTurn() {
                         log(`${currentTarget.name}の${effectResult.stat}が下がった！`);
                     } else if (effectResult.type === 'heal') {
                         log(`${action.char.name}は回復した！`);
-                    } else if (effectResult.type === 'drain') {
+                    } else if (effectResult[type] === 'drain') {
                         log(`${action.char.name}は体力を吸い取った！`);
                     }
                 }
