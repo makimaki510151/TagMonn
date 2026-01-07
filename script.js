@@ -654,7 +654,7 @@ function updateCharDisplay(pNum, char) {
         resHtml += `<div class="res-item ${val < 1.0 ? 'res-resist' : (val > 1.0 ? 'res-weak' : '')}">${name}:${Math.round(val * 100)}%</div>`;
     });
     resHtml += '</div>';
-    infoEl.innerHTML = `<div class="char-name">${char.name}</div><div class="char-stats">HP: ${Math.floor(char.currentHp)}/${char.maxHp}</div>${resHtml}`;
+    infoEl.innerHTML = `<div class="char-name">${char.name}</div><div class="char-stats">体力: ${Math.floor(char.currentHp)}/${char.maxHp} 攻撃:${char.atk} 速度:${char.spd}</div>${resHtml}`;
     fillEl.style.width = `${(char.currentHp / char.maxHp) * 100}%`;
 }
 
