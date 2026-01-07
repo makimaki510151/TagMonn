@@ -699,7 +699,6 @@ function renderSelectionPanel() {
                 <div style="font-size:0.6rem; margin-top:2px;">${resSummary}</div>
             `;
 
-            btn.onmouseover = () => showDetail(move, 'move');
             btn.onclick = () => selectCharacter(pNum, idx);
             grid.appendChild(btn);
         }
@@ -747,6 +746,7 @@ function renderActionPanel(pNum, char, containerId) {
             btn.classList.add('active');
         }
         btn.textContent = m.name;
+        btn.onmouseover = () => showDetail(m, 'move');
         btn.onclick = () => handleAction(pNum, { type: 'move', move: m });
         grid.appendChild(btn);
     });
