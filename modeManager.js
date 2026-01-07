@@ -9,7 +9,7 @@ const ModeManager = {
     currentMode: 'free',
     
     // 初期タグID (ストーリー開始時)
-    INITIAL_STORY_TAGS: [101, 102, 103, 104, 105, 106],
+    INITIAL_STORY_TAGS: [102, 103, 104, 105, 109, 110],
 
     init: function() {
         this.currentMode = localStorage.getItem('tm_current_mode') || this.MODES.FREE;
