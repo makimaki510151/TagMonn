@@ -285,9 +285,9 @@ function updateBuildPreview() {
 // ステータス計算式を元に戻す
 function calculateStats(tags) {
     // ベース値の設定
-    let hp = 200;
-    let atk = 100;
-    let spd = 100;
+    let hp = 300;
+    let atk = 150;
+    let spd = 150;
 
     tags.forEach(tag => {
         // hpは常に2倍として扱うため、タグの加算値を2倍にして足す
