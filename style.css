@@ -90,7 +90,7 @@ h3 { margin-top: 0; margin-bottom: 15px; font-size: 1.1rem; border-left: 4px sol
 }
 
 .saved-area {
-    max-height: 240px; /* 固定の高さ（height）から最大高さ（max-height）に変更 */
+    max-height: 240px; 
     overflow-y: auto; 
     padding: 12px;
     border: 1px solid var(--border);
@@ -267,4 +267,47 @@ h3 { margin-top: 0; margin-bottom: 15px; font-size: 1.1rem; border-left: 4px sol
 }
 .loading-msg {
     font-size: 1.5rem; font-weight: bold; color: var(--text-muted);
+}
+
+/* スマホ対応用レスポンシブ設定 */
+@media (max-width: 768px) {
+    header { padding: 0.5rem 1rem; }
+    header h1 { font-size: 1.1rem; }
+    
+    nav { gap: 5px; }
+    nav button { padding: 6px 10px; font-size: 0.8rem; }
+
+    main { padding: 5px; }
+    .panel { padding: 12px 15px; border-radius: 12px; }
+
+    .column-layout { grid-template-columns: 1fr; gap: 20px; }
+
+    .grid-list { 
+        grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); 
+        max-height: 200px; 
+    }
+
+    .battle-header {
+        flex-direction: column;
+        padding: 15px;
+        text-align: center;
+    }
+    .side-ui.left, .side-ui.right { text-align: center; }
+    .vs-label { padding: 5px 0; font-size: 1.2rem; }
+    .resistance-grid.right { justify-content: center; }
+    .resistance-grid { justify-content: center; }
+
+    .char-name { font-size: 1.2rem; }
+    .char-stats { font-size: 0.85rem; }
+
+    #battle-controls {
+        grid-template-columns: 1fr;
+        gap: 10px;
+        padding: 10px;
+    }
+    
+    .action-grid { gap: 8px; }
+    .action-btn { padding: 10px; font-size: 0.85rem; }
+    
+    #battle-log { height: 100px; font-size: 0.8rem; }
 }
