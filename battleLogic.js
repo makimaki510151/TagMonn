@@ -9,11 +9,11 @@ const BattleLogic = {
      * @param {Object} target - 防御側キャラ
      * @returns {Object} 計算結果 { damage, resMult, isHit }
      */
-    calculateDamage: function(move, attacker, target) {
+    calculateDamage: function (move, attacker, target) {
         // 命中判定
         const accuracy = move.accuracy !== undefined ? move.accuracy : 100;
         const isHit = Math.random() * 100 < accuracy;
-        
+
         if (!isHit) {
             return { damage: 0, resMult: 1.0, isHit: false };
         }
@@ -42,7 +42,7 @@ const BattleLogic = {
      * @param {number} damage - 与えたダメージ（ドレイン用）
      * @returns {Object|null} 適用された効果の内容
      */
-    applyEffect: function(effect, attacker, target, damage) {
+    applyEffect: function (effect, attacker, target, damage, move) {
         if (!effect) return null;
 
         // 成功確率の判定 (chanceが1未満なら確率、未記載または1なら100%)
@@ -51,7 +51,25 @@ const BattleLogic = {
             return null;
         }
 
-        const result = { type: effect.type, stat: effect.stat, value: effect.value };
+        const statNames = {
+            'atk': '攻撃',
+            'spd': '速度',
+            'hp': 'HP'
+        };
+        let statName = statNames[effect.stat] || effect.stat;
+
+        // def（耐性）の場合は、技の耐性タイプ名を取得する
+        if (effect.stat === 'def' && move) {
+            // gameDataはグローバルにある想定、または引数で渡す
+            const res = gameData.resistances.find(r => r.id === move.res_type);
+            statName = res ? `${res.name}耐性` : '耐性';
+        }
+
+        const result = {
+            type: effect.type,
+            stat: statName,
+            value: effect.value
+        };
 
         switch (effect.type) {
             case 'buff':

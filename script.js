@@ -847,11 +847,17 @@ async function processTurn() {
             }
             // 効果処理
             if (action.act.move.effect) {
-                const effectResult = BattleLogic.applyEffect(action.act.move.effect, action.char, currentTarget, res.damage);
+                const effectResult = BattleLogic.applyEffect(action.act.move.effect, action.char, currentTarget, res.damage, action.sct.move);
                 if (effectResult) {
-                    if (effectResult.type === 'buff') log(`${action.char.name}の${effectResult.stat}が上がった！`);
-                    else if (effectResult.type === 'debuff') log(`${currentTarget.name}の${effectResult.stat}が下がった！`);
-                    else if (effectResult.type === 'heal') log(`${action.char.name}は回復した！`);
+                    if (effectResult.type === 'buff') {
+                        log(`${action.char.name}の${effectResult.stat}が上がった！`);
+                    } else if (effectResult.type === 'debuff') {
+                        log(`${currentTarget.name}の${effectResult.stat}が下がった！`);
+                    } else if (effectResult.type === 'heal') {
+                        log(`${action.char.name}は回復した！`);
+                    } else if (effectResult.type === 'drain') {
+                        log(`${action.char.name}は体力を吸い取った！`);
+                    }
                 }
             }
 
