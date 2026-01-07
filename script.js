@@ -855,7 +855,7 @@ async function processTurn() {
                         log(`${currentTarget.name}の${effectResult.stat}が下がった！`);
                     } else if (effectResult.type === 'heal') {
                         log(`${action.char.name}は回復した！`);
-                    } else if (effectResult[type] === 'drain') {
+                    } else if (effectResult.type === 'drain') {
                         log(`${action.char.name}は体力を吸い取った！`);
                     }
                 }
