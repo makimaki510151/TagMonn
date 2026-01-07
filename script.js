@@ -832,15 +832,7 @@ async function processTurn() {
     for (let action of actions) {
         if (action.char.isFainted) continue;
 
-        // --- 追加：ひるみチェック ---
-        if (action.char.isFlinching) {
-            log(`${attacker.name}はひるんで動けない！`);
-            action.char.isFlinching = false;
-            // 必要に応じて await wait(1000); などの演出待ちを入れる
-            continue;
-        }
-        // -------------------------
-
+        // 交代処理
         if (action.act.type === 'switch') {
             const party = action.p === 1 ? battleState.p1 : battleState.p2;
             const prevName = action.char.name;
@@ -859,6 +851,16 @@ async function processTurn() {
             continue;
         }
 
+        // --- 追加・修正：ひるみチェック (交代の後、攻撃の前に実行) ---
+        if (action.char.isFlinching) {
+            log(`${action.char.name}はひるんで動けない！`); // attackerをaction.charに修正
+            action.char.isFlinching = false;
+            updateBattleUI();
+            await new Promise(r => setTimeout(r, 1000)); // 演出待ちを追加
+            continue;
+        }
+        // --------------------------------------------------------
+
         const currentTargetIdx = action.p === 1 ? battleState.p2ActiveIdx : battleState.p1ActiveIdx;
         const currentTarget = action.p === 1 ? battleState.p2[currentTargetIdx] : battleState.p1[currentTargetIdx];
 
@@ -875,7 +877,9 @@ async function processTurn() {
             }
 
             if (action.act.move.effect) {
+                // BattleLogic.applyEffect 内で target.isFlinching = true になる
                 const effectResult = BattleLogic.applyEffect(action.act.move.effect, action.char, currentTarget, res.damage, action.act.move);
+
                 if (effectResult) {
                     if (effectResult.type === 'buff') {
                         log(`${action.char.name}の${effectResult.stat}が上がった！`);
@@ -886,8 +890,8 @@ async function processTurn() {
                     } else if (effectResult.type === 'drain') {
                         log(`${action.char.name}は体力を吸い取った！`);
                     }
-                    // --- 追加：ひるみ効果のログ ---
-                    else if (effectResult.type === 'flinch') {
+                    // ひるみ発生時のログ
+                    else if (effectResult.type === 'flinch_apply') { // battleLogic.jsの戻り値に合わせる
                         log(`${currentTarget.name}はひるんだ！`);
                     }
                 }
@@ -907,10 +911,8 @@ async function processTurn() {
 
                     if (battleState.isStoryMode) {
                         if (winnerNum === 1) {
-                            // ストーリー勝利
                             handleStoryClear();
                         } else {
-                            // ストーリー敗北
                             alert("敗北してしまった…パーティを見直して再挑戦しよう。");
                             document.getElementById('battle-field').classList.add('hidden');
                             document.getElementById('story-section').classList.remove('hidden');
@@ -925,6 +927,8 @@ async function processTurn() {
                     return;
                 }
                 battleState.isForcedSwitch = (action.p === 1 ? 2 : 1);
+                // 倒れたらひるみフラグを折っておく
+                currentTarget.isFlinching = false;
                 break;
             }
         } else {
@@ -934,7 +938,7 @@ async function processTurn() {
         await new Promise(r => setTimeout(r, 1000));
     }
 
-    // --- 追加：ターン終了時に全員のひるみフラグを掃除 ---
+    // ターン終了時に全員のひるみフラグをリセット
     battleState.p1.concat(battleState.p2).forEach(c => c.isFlinching = false);
 
     battleState.p1NextAction = null; battleState.p2NextAction = null;

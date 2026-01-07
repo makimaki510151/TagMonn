@@ -160,15 +160,17 @@ io.on('connection', (socket) => {
                 const attacker = a.p === 1 ? room.p1Party[room.p1ActiveIdx] : room.p2Party[room.p2ActiveIdx];
                 const target = a.p === 1 ? room.p2Party[room.p2ActiveIdx] : room.p1Party[room.p1ActiveIdx];
 
-                if (attacker.isFainted) continue;
-                if (attacker.isFlinching) {
+                if (a.char.isFainted) continue;
+
+                // ★追加：ひるみ判定
+                if (a.char.isFlinching) {
                     outcomes.push({
-                        type: 'flinch_wait',
-                        attackerName: attacker.name,
+                        type: 'flinch_wait', // クライアント側に「動けない」ことを伝える
+                        attackerName: a.char.name,
                         p: a.p
                     });
-                    attacker.isFlinching = false; // 次のターンは動けるようにリセット
-                    continue; // 技の処理をスキップ
+                    a.char.isFlinching = false; // ひるみ状態を解除
+                    continue; // 以降の攻撃処理をスキップ
                 }
 
                 // server.js ターン解決部分
