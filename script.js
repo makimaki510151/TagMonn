@@ -699,6 +699,7 @@ function renderSelectionPanel() {
                 <div style="font-size:0.6rem; margin-top:2px;">${resSummary}</div>
             `;
             
+            btn.onmouseover = () => showDetail(move, 'move');
             btn.onclick = () => selectCharacter(pNum, idx);
             grid.appendChild(btn);
         }
