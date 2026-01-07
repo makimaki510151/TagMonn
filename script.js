@@ -869,10 +869,30 @@ async function processTurn() {
                 // 全滅判定
                 const party = action.p === 1 ? battleState.p2 : battleState.p1;
                 if (!party.some(c => !c.isFainted)) {
-                    log(`P${action.p}の勝利！`);
-                    if (battleState.isStoryMode && action.p === 1) handleStoryClear();
+                    const winnerNum = action.p;
+                    log(`P${winnerNum}の勝利！`);
+
                     battleState.isProcessing = false;
                     updateBattleUI();
+
+                    if (battleState.isStoryMode) {
+                        if (winnerNum === 1) {
+                            // ストーリー勝利
+                            handleStoryClear();
+                        } else {
+                            // ストーリー敗北
+                            alert("敗北してしまった…パーティを見直して再挑戦しよう。");
+                            document.getElementById('battle-field').classList.add('hidden');
+                            document.getElementById('story-section').classList.remove('hidden');
+                            document.getElementById('story-list-view').classList.remove('hidden');
+                            document.getElementById('story-dialogue-view').classList.add('hidden');
+                            renderStoryScreen();
+                        }
+                    } else {
+                        // ローカル対戦終了
+                        alert(`P${winnerNum}の勝利！バトルを終了します。`);
+                        showBattleModeSelect();
+                    }
                     return;
                 }
 
