@@ -139,6 +139,24 @@ function setupEventListeners() {
     document.getElementById('start-battle-btn').onclick = startBattle;
 }
 
+function handleSetupBack() {
+    if (ModeManager.currentMode === 'story') {
+        // 1. まずセクションを切り替える
+        showSection('story');
+
+        // 2. ストーリー内の各表示要素の状態をリセット
+        // ダイアログ（会話）を隠し、リスト（ステージ一覧）を表示する
+        document.getElementById('story-list-view').classList.remove('hidden');
+        document.getElementById('story-dialogue-view').classList.add('hidden');
+        document.getElementById('battle-setup').classList.add('hidden');
+
+        // 3. データを描画する
+        renderStoryScreen();
+    } else {
+        showBattleModeSelect();
+    }
+}
+
 function showSection(id) {
     document.querySelectorAll('.panel').forEach(p => p.classList.add('hidden'));
     document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
@@ -151,18 +169,20 @@ function showSection(id) {
 
     if (id === 'build') renderBuildScreen();
     if (id === 'party') renderPartyScreen();
-    if (id === 'story') renderStoryScreen();
+    if (id === 'story') {
+        // ストーリー画面を表示する際はセットアップなどのゴミを消す
+        document.getElementById('battle-setup').classList.add('hidden');
+        renderStoryScreen();
+    }
     if (id === 'battle') {
         const isBattleFieldVisible = !document.getElementById('battle-field').classList.contains('hidden');
         const isBattleSetupVisible = !document.getElementById('battle-setup').classList.contains('hidden');
         const isOnlineSectionVisible = !document.getElementById('online-section').classList.contains('hidden');
 
-        if (!battleState.isProcessing && !isBattleFieldVisible && !isBattleSetupVisible && !isOnlineSectionVisible) {
+        // ストーリーモードでない場合のみ、自動でモード選択（フリーモード用）を表示する
+        if (ModeManager.currentMode !== 'story' &&
+            !battleState.isProcessing && !isBattleFieldVisible && !isBattleSetupVisible && !isOnlineSectionVisible) {
             showBattleModeSelect();
-        }
-    } else {
-        if (document.getElementById('battle-field').classList.contains('hidden')) {
-            battleState.isStoryMode = false;
         }
     }
 }

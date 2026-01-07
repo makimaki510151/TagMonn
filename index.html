@@ -19,7 +19,7 @@
             <button id="nav-party" onclick="showSection('party')">パーティ編成</button>
             <button id="nav-story" onclick="showSection('story')">ストーリー</button>
             <button id="nav-battle" onclick="showSection('battle')">対戦</button>
-            <button onclick="returnToTitle()" style="background: #64748b; margin-left: auto;">タイトルへ</button>
+            <button id="nav-title" onclick="returnToTitle()">タイトルへ</button>
         </nav>
     </header>
 
@@ -28,10 +28,12 @@
             <div style="text-align: center; padding: 50px 0;">
                 <h1 style="font-size: 3rem; margin-bottom: 10px; color: var(--primary);">Tagmon</h1>
                 <p style="color: var(--text-muted); margin-bottom: 40px;">Build & Battle Simulator</p>
-                
+
                 <div style="display: flex; flex-direction: column; gap: 20px; max-width: 300px; margin: 0 auto;">
-                    <button onclick="selectGameMode('story')" class="primary-btn" style="height: 80px; font-size: 1.2rem;">ストーリーモード</button>
-                    <button onclick="selectGameMode('free')" class="primary-btn" style="height: 80px; font-size: 1.2rem; background: #8b5cf6;">フリーモード</button>
+                    <button onclick="selectGameMode('story')" class="primary-btn"
+                        style="height: 80px; font-size: 1.2rem;">ストーリーモード</button>
+                    <button onclick="selectGameMode('free')" class="primary-btn"
+                        style="height: 80px; font-size: 1.2rem; background: #8b5cf6;">フリーモード</button>
                 </div>
             </div>
         </section>
@@ -47,10 +49,12 @@
                 <div id="story-stage-list" class="saved-area" style="height: auto; max-height: 400px;"></div>
             </div>
             <div id="story-dialogue-view" class="hidden">
-                <div class="stat-box" style="min-height: 200px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;">
+                <div class="stat-box"
+                    style="min-height: 200px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;">
                     <h2 id="story-dialogue-title" style="color: var(--primary); margin-bottom: 20px;"></h2>
                     <p id="story-dialogue-text" style="font-size: 1.2rem; line-height: 1.8; margin-bottom: 30px;"></p>
-                    <button id="story-dialogue-btn" class="primary-btn" style="width: auto; padding: 12px 40px;">次へ</button>
+                    <button id="story-dialogue-btn" class="primary-btn"
+                        style="width: auto; padding: 12px 40px;">次へ</button>
                 </div>
             </div>
         </section>
@@ -112,7 +116,7 @@
             <div id="battle-setup" class="hidden">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                     <h3 style="margin: 0;">対戦準備 (Local)</h3>
-                    <button onclick="showBattleModeSelect()" class="tag-btn">戻る</button>
+                    <button onclick="handleSetupBack()" class="tag-btn">戻る</button>
                 </div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
                     <div>
