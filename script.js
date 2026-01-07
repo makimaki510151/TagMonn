@@ -215,7 +215,7 @@ function toggleTag(tag) {
     }
     currentBuild.moves = currentBuild.moves.filter(m => {
         if (m.required_tags.length === 0) return true;
-        return m.required_tags.some(tid => currentBuild.tags.some(t => t.id === tid));
+        return m.required_tags.every(tid => currentBuild.tags.some(t => t.id === tid));
     });
     renderBuildScreen();
 }
@@ -286,7 +286,7 @@ function renderMoveCandidates() {
 
     gameData.moves.forEach(move => {
         const canLearn = move.required_tags.length === 0 ||
-            move.required_tags.some(tid => currentBuild.tags.some(t => t.id === tid));
+            move.required_tags.every(tid => currentBuild.tags.some(t => t.id === tid));
         if (!canLearn) return;
 
         const btn = document.createElement('button');
